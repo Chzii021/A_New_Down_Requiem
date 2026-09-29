@@ -1,0 +1,27 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://SpecialCharm.tscn" id="1_2488o"]
+
+[sub_resource type="Environment" id="Environment_bcarj"]
+background_mode = 1
+background_color = Color(0.8509804, 0.8352941, 0.7882353, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 0.9490196, 0.8666667, 1)
+ambient_light_energy = 0.5
+
+[node name="SpecialCharmPreview" type="Node3D" unique_id=459692361]
+
+[node name="IsanSpiritCharm" type="Node3D" parent="." unique_id=832312651 instance=ExtResource("1_2488o")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="Environment" type="WorldEnvironment" parent="." unique_id=604619269]
+environment = SubResource("Environment_bcarj")
+
+[node name="KeyLight" type="DirectionalLight3D" parent="." unique_id=1584489047]
+transform = Transform3D(0.90630776, 0.24240388, -0.34618863, 0, 0.81915206, 0.57357645, 0.42261827, -0.5198368, 0.74240386, 0, 0, 0)
+light_energy = 1.15
+
+[node name="PreviewCamera" type="Camera3D" parent="." unique_id=1666907401]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 1.05, -5)
+current = true
+fov = 35.0

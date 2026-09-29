@@ -1,0 +1,55 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://AllMapsEditable.gd" id="1_grp43"]
+[ext_resource type="PackedScene" path="res://Map1Morning.tscn" id="2_q4rhq"]
+[ext_resource type="Script" path="res://MapLevel.gd" id="3_opnu8"]
+[ext_resource type="PackedScene" path="res://Map2LateMorning.tscn" id="4_b7sqf"]
+[ext_resource type="PackedScene" path="res://Map3Dusk.tscn" id="5_k2jec"]
+[ext_resource type="PackedScene" path="res://Map4Night.tscn" id="6_24kpp"]
+
+[sub_resource type="Environment" id="Environment_hmqjg"]
+background_mode = 1
+background_color = Color(0.50980395, 0.6039216, 0.60784316, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.89411765, 0.90588236, 0.85882354, 1)
+ambient_light_energy = 0.55
+
+[node name="AllFourMaps" type="Node3D" unique_id=472406615]
+script = ExtResource("1_grp43")
+
+[node name="01_Morning" type="Node3D" parent="." unique_id=1932175761 instance=ExtResource("2_q4rhq")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -185, 0, 185)
+script = ExtResource("3_opnu8")
+baked_scene = true
+
+[node name="02_LateMorning" type="Node3D" parent="." unique_id=2100795963 instance=ExtResource("4_b7sqf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 185, 0, 185)
+script = ExtResource("3_opnu8")
+map_id = 2
+baked_scene = true
+
+[node name="03_Dusk" type="Node3D" parent="." unique_id=1834783109 instance=ExtResource("5_k2jec")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -185, 0, -185)
+script = ExtResource("3_opnu8")
+map_id = 3
+baked_scene = true
+
+[node name="04_Night" type="Node3D" parent="." unique_id=1773983835 instance=ExtResource("6_24kpp")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 185, 0, -185)
+script = ExtResource("3_opnu8")
+map_id = 4
+baked_scene = true
+
+[node name="OverviewEnvironment" type="WorldEnvironment" parent="." unique_id=1392099121]
+environment = SubResource("Environment_hmqjg")
+
+[node name="OverviewSun" type="DirectionalLight3D" parent="." unique_id=550543020]
+transform = Transform3D(0.90630776, 0.34618863, -0.24240388, 0, 0.57357645, 0.81915206, 0.42261827, -0.74240386, 0.5198368, 0, 0, 0)
+light_color = Color(1, 0.9490196, 0.85882354, 1)
+light_energy = 0.95
+
+[node name="OverviewCamera" type="Camera3D" parent="." unique_id=1360303667]
+transform = Transform3D(1, 0, 0, 0, 0.5150381, 0.8571673, 0, -0.8571673, 0.5150381, 0, 600, 340)
+current = true
+fov = 66.0
+far = 1200.0
