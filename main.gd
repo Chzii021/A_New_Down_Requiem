@@ -13,7 +13,8 @@ const BOSS_MAP_SCALE = 0.78
 const VILLAGER_HP = 5
 const RUN_SPEED = 7.4
 const VILLAGER_SPEED = RUN_SPEED
-const VILLAGER_AGGRO_RANGE = 10.0
+const VILLAGER_AGGRO_RANGE = 30.0
+const PORTAL_TRIGGER_RANGE = 1.7
 const STAGE_SPAWN = Vector3(0.0, 0.2, 15.0)
 const RESPAWNS_PER_STAGE = 2
 const RESPAWN_PROTECTION = 3.0
@@ -105,6 +106,8 @@ var dash_remaining = 0.0
 var dash_cooldown = 0.0
 var dash_direction = Vector3.ZERO
 var transition_pending = false
+var portal_open = false
+var portal_node: Node3D
 var bench_position = Vector3(-4.0, 0.0, 9.0)
 var gate_barrier: MeshInstance3D
 var message_time = 0.0
@@ -135,8 +138,10 @@ func _ready() -> void:
 	add_child(game_audio)
 	sound_settings = hud.sound_settings
 	sound_settings.connect("volume_changed", Callable(game_audio, "set_volume_level"))
+	sound_settings.connect("sensitivity_changed", Callable(game_audio, "set_look_sensitivity"))
 	sound_settings.connect("close_requested", Callable(self, "_close_sound_settings"))
 	sound_settings.call("set_levels", game_audio.call("get_volume_levels"))
+	sound_settings.call("set_sensitivity", game_audio.call("get_look_sensitivity"))
 	_update_camera(0.0)
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_show_message("บันทึกจุดเกิดแล้ว • เก็บชิ้นส่วนปืนกระติบ ไหว้ศาลและช่วยชาวบ้าน", 7.0)
@@ -603,8 +608,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not finished:
 		var sensitivity = .65 if aiming else 1.0
-		yaw -= event.relative.x * 0.0035*sensitivity
-		pitch = clamp(pitch - event.relative.y * 0.0028*sensitivity, -1.43, 0.60)
+		var look_sensitivity = game_audio.call("get_look_sensitivity")
+		yaw -= event.relative.x * 0.0035 * sensitivity * look_sensitivity
+		pitch = clamp(pitch - event.relative.y * 0.0028 * sensitivity * look_sensitivity, -1.43, 0.60)
 		if first_person:
 			first_weapon.call("add_sway",event.relative)
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not finished:
@@ -932,6 +938,12 @@ func _physics_process(delta: float) -> void:
 		var bounds = MAP_LAYOUT.limits(stage) * (BOSS_MAP_SCALE if stage == 4 else 1.0)
 		player.global_position.z = clampf(player.global_position.z, -bounds.y, 20.0)
 		player.global_position.x = clampf(player.global_position.x, -bounds.x, bounds.x)
+		if portal_open and is_instance_valid(portal_node):
+			var portal_offset = player.global_position - portal_node.global_position
+			portal_offset.y = 0.0
+			if portal_offset.length() <= PORTAL_TRIGGER_RANGE:
+				_advance_stage()
+				return
 		if lunging_now:
 			var lunge_moved = player.global_position.distance_to(position_before_move)
 			special_lunge_timeout = maxf(special_lunge_timeout - delta, 0.0)
@@ -980,6 +992,7 @@ func _process(delta: float) -> void:
 				medicine["taken"] = true
 				medicine["node"].visible = false
 				medicine_count += 1
+				game_audio.call("play_item_pickup")
 				_show_message("เก็บยาแล้ว • มี %d/%d ขวด • กด E เพื่อฟื้นเลือด 50" % [medicine_count, MAX_MEDICINE], 2.4)
 	for index in range(medicines.size()):
 		var medicine = medicines[index]
@@ -1341,7 +1354,7 @@ func _exorcise(enemy: Dictionary, award_charge: bool) -> void:
 
 
 func _check_stage_clear() -> void:
-	if transition_pending or finished or worshipped_count < shrines.size():
+	if transition_pending or portal_open or finished or worshipped_count < shrines.size():
 		return
 	if stage == 2 and not assembled:
 		return
@@ -1352,22 +1365,74 @@ func _check_stage_clear() -> void:
 	for enemy in enemies:
 		if enemy["alive"]:
 			return
-	transition_pending = true
 	_end_special()
 	_cancel_reload()
 	shot_requested = false
 	trigger_held = false
 	if stage == 4:
+		transition_pending = true
 		victory_pending = true
 		_show_message("ไหว้ศาลและช่วยทุกคนครบแล้ว ยายจ่อยเป็นอิสระ!", 2.6)
 		get_tree().create_timer(2.6).timeout.connect(func():
 			if not finished:
 				_finish(true))
 	else:
-		_show_message("ภารกิจแผนที่ %d สำเร็จ กำลังเดินทางต่อ..." % stage, 1.8)
-		get_tree().create_timer(1.8).timeout.connect(func():
-			if not finished:
-				_advance_stage())
+		_make_stage_portal()
+		portal_open = true
+		game_audio.call("play_portal")
+		_show_message("ภารกิจแผนที่ %d สำเร็จ ประตูมิติปรากฏขึ้นแล้ว เดินเข้าไปเพื่อไปต่อ" % stage, 4.0)
+
+
+func _make_stage_portal() -> void:
+	portal_node = Node3D.new()
+	portal_node.name = "StagePortal"
+	add_child(portal_node)
+	var hub: Vector2 = MAP_LAYOUT.routes(stage)[0][1]
+	portal_node.global_position = current_map.to_global(Vector3(hub.x, 0.0, hub.y))
+	var surface = MeshInstance3D.new()
+	surface.name = "PortalSurface"
+	var surface_mesh = QuadMesh.new()
+	surface_mesh.size = Vector2(1.6, 2.35)
+	surface.mesh = surface_mesh
+	surface.position = Vector3(0.0, 1.08, 0.0)
+	var portal_shader = Shader.new()
+	portal_shader.code = """
+	shader_type spatial;
+	render_mode unshaded, cull_disabled, blend_mix, depth_draw_never;
+
+	float hash_cell(vec2 cell) {
+		return fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+	}
+
+	void fragment() {
+		vec2 point = UV * 2.0 - 1.0;
+		float radius = length(point);
+		float angle = atan(point.y, point.x);
+		float edge_wobble = sin(angle * 7.0 + TIME * 0.16) * 0.055 + sin(angle * 13.0 - TIME * 0.21) * 0.035 + sin(angle * 23.0 + TIME * 0.12) * 0.018;
+		float edge_distance = 1.0 + edge_wobble - radius;
+		float turbulence = sin(angle * 3.0 + radius * 12.0 + TIME * 0.35) * 0.32;
+		float spiral = sin(radius * 34.0 - angle * 3.4 + turbulence + TIME * 0.55);
+		float bands = smoothstep(-0.48, 0.28, spiral);
+		vec3 color = mix(vec3(0.035, 0.39, 0.19), vec3(0.19, 0.61, 0.24), bands);
+		color = mix(color, vec3(0.66, 0.84, 0.29), smoothstep(0.48, 0.82, spiral));
+		float rim = 1.0 - smoothstep(0.015, 0.11, abs(edge_distance));
+		color = mix(color, vec3(0.76, 0.94, 0.39), rim * 0.78);
+		float fleck_grid = hash_cell(floor(UV * vec2(18.0, 21.0)));
+		vec2 local_cell = fract(UV * vec2(18.0, 21.0));
+		vec2 fleck_center = vec2(hash_cell(floor(UV * vec2(18.0, 21.0)) + 4.7), hash_cell(floor(UV * vec2(18.0, 21.0)) + 9.2));
+		float fleck_radius = mix(0.08, 0.22, hash_cell(floor(UV * vec2(18.0, 21.0)) + 2.1));
+		float flecks = (1.0 - smoothstep(fleck_radius, fleck_radius + 0.07, distance(local_cell, fleck_center))) * step(0.73, fleck_grid) * smoothstep(0.52, 0.86, radius);
+		color = mix(color, vec3(0.94, 0.98, 0.82), flecks);
+		float edge = smoothstep(-0.018, 0.018, edge_distance);
+		ALBEDO = color;
+		EMISSION = color * 0.18;
+		ALPHA = edge;
+	}
+	"""
+	var surface_material = ShaderMaterial.new()
+	surface_material.shader = portal_shader
+	surface.material_override = surface_material
+	portal_node.add_child(surface)
 
 
 func _reload() -> void:
@@ -1424,6 +1489,7 @@ func _interact() -> void:
 		if not part["taken"] and player.global_position.distance_to(part["node"].global_position) < 2.25:
 			part["taken"] = true
 			part["node"].visible = false
+			game_audio.call("play_item_pickup")
 			match stage:
 				1:
 					parts_found += 1
@@ -1490,8 +1556,13 @@ func _equip_ak() -> void:
 
 
 func _advance_stage() -> void:
-	if stage >= 4:
+	if stage >= 4 or transition_pending or not portal_open:
 		return
+	transition_pending = true
+	portal_open = false
+	if is_instance_valid(portal_node):
+		portal_node.queue_free()
+	portal_node = null
 	_end_special()
 	_cancel_reload()
 	for enemy in enemies:
@@ -1572,12 +1643,20 @@ func _update_ui() -> void:
 			var villagers_cleared = rescued_stage >= MAP_VILLAGER_COUNTS[3]
 			var phase_text = "เป็นอิสระแล้ว" if boss_free else ("ช่วยชาวบ้านก่อน" if not villagers_cleared else ("โจมตีได้" if boss_vulnerable else "เกราะวิญญาณ"))
 			item_goal = "ช่วยชาวบ้าน %d/35 • พลัง%s\nยายจ่อย: %s %s" % [rescued_stage, "ไม่จำกัด" if special_unlimited else "%d/15 จนครบ 35 คน" % special_charge, phase_text, "%.1f วิ" % boss_phase_remaining if villagers_cleared and not boss_free else ""]
+	if portal_open:
+		item_goal = "เดินเข้าประตูมิติกลางแผนที่เพื่อไปต่อ"
 	objective_label.text = "แผนที่ %d/4: %s (%s)\nไหว้ศาลพระภูมิ %d/%d\n%s" % [stage, map_names[stage - 1], day_times[stage - 1], worshipped_count, shrines.size(), item_goal]
 	if finished:
 		prompt_label.text = ""
 		return
 	prompt_label.text = ""
 	if transition_pending:
+		return
+	if portal_open and is_instance_valid(portal_node):
+		var portal_offset = player.global_position - portal_node.global_position
+		portal_offset.y = 0.0
+		if portal_offset.length() < 5.0:
+			prompt_label.text = "เดินเข้าไป • ไปแผนที่ %d" % (stage + 1)
 		return
 	for part in parts:
 		if not part["taken"] and player.global_position.distance_to(part["node"].global_position) < 2.25:

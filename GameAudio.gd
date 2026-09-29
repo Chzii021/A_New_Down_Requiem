@@ -5,8 +5,14 @@ const GUNSHOT = preload("res://audio/gunshot_original.wav")
 const HIT = preload("res://audio/hit_original.wav")
 const SPIRIT = preload("res://audio/spirit_original.wav")
 const CRAFT = preload("res://audio/craft_original.wav")
-const SHRINE = preload("res://audio/shrine_original.wav")
+const SHRINE_SOUNDS = [
+	preload("res://audio/End_portal_eye_place1.ogg.mp3"),
+	preload("res://audio/End_portal_eye_place2.ogg.mp3"),
+	preload("res://audio/End_portal_eye_place3.ogg.mp3")
+]
+const PORTAL_ACTIVATION = preload("res://audio/end_portal_activation.mp3")
 const RELOAD = preload("res://audio/reload_original.wav")
+const ITEM_PICKUP_PATH = "res://audio/minecraft_item_pickup.mp3"
 const SETTINGS_PATH = "user://audio_settings.cfg"
 const MUSIC_BASE_DB = -16.44
 const GUN_BASE_DB = -5.0
@@ -21,8 +27,12 @@ var hit_index = 0
 var spirit_stream: AudioStream
 var craft_player: AudioStreamPlayer
 var shrine_player: AudioStreamPlayer
+var shrine_sound_index = 0
+var portal_player: AudioStreamPlayer
 var reload_player: AudioStreamPlayer
+var item_pickup_player: AudioStreamPlayer
 var volume_levels = {"music": 1.0, "gun": 1.0, "effects": 1.0}
+var look_sensitivity = 1.0
 
 
 func _ready() -> void:
@@ -48,8 +58,12 @@ func _ready() -> void:
 		hit_players.append(player)
 	spirit_stream = _preferred_stream("spirit", SPIRIT)
 	craft_player = _one_shot("CraftSound", _preferred_stream("craft", CRAFT), -5.0)
-	shrine_player = _one_shot("ShrineSound", _preferred_stream("shrine", SHRINE), -7.0)
+	shrine_player = _one_shot("ShrineSound", SHRINE_SOUNDS[0], -7.0)
+	portal_player = _one_shot("PortalActivationSound", PORTAL_ACTIVATION, -7.0)
 	reload_player = _one_shot("ReloadSound", _preferred_stream("reload", RELOAD), -5.0)
+	if ResourceLoader.exists(ITEM_PICKUP_PATH):
+		var item_pickup_stream: AudioStream = load(ITEM_PICKUP_PATH)
+		item_pickup_player = _one_shot("ItemPickupSound", item_pickup_stream, -5.0)
 	_apply_volumes()
 	music_player.play()
 
@@ -60,10 +74,15 @@ func _load_settings() -> void:
 		return
 	for category in volume_levels.keys():
 		volume_levels[category] = clampf(float(config.get_value("audio", category, 1.0)), 0.0, 1.0)
+	look_sensitivity = clampf(float(config.get_value("controls", "look_sensitivity", 1.0)), 0.25, 2.0)
 
 
 func get_volume_levels() -> Dictionary:
 	return volume_levels.duplicate()
+
+
+func get_look_sensitivity() -> float:
+	return look_sensitivity
 
 
 func set_volume_level(category: String, level: float) -> void:
@@ -71,9 +90,20 @@ func set_volume_level(category: String, level: float) -> void:
 		return
 	volume_levels[category] = clampf(level, 0.0, 1.0)
 	_apply_volumes()
+	_save_settings()
+
+
+func set_look_sensitivity(level: float) -> void:
+	look_sensitivity = clampf(level, 0.25, 2.0)
+	_save_settings()
+
+
+func _save_settings() -> void:
 	var config := ConfigFile.new()
+	config.load(SETTINGS_PATH)
 	for key in volume_levels.keys():
 		config.set_value("audio", key, volume_levels[key])
+	config.set_value("controls", "look_sensitivity", look_sensitivity)
 	config.save(SETTINGS_PATH)
 
 
@@ -90,7 +120,10 @@ func _apply_volumes() -> void:
 		player.volume_db = _scaled_db(HIT_BASE_DB, "effects")
 	craft_player.volume_db = _scaled_db(-5.0, "effects")
 	shrine_player.volume_db = _scaled_db(-7.0, "effects")
+	portal_player.volume_db = _scaled_db(-7.0, "effects")
 	reload_player.volume_db = _scaled_db(-5.0, "effects")
+	if item_pickup_player != null:
+		item_pickup_player.volume_db = _scaled_db(-5.0, "effects")
 	for child in get_children():
 		if child is AudioStreamPlayer3D and child.name == "SpiritReleaseSound":
 			child.volume_db = _scaled_db(SPIRIT_BASE_DB, "effects")
@@ -143,7 +176,21 @@ func play_craft() -> void:
 
 func play_shrine() -> void:
 	shrine_player.stop()
+	shrine_player.stream = SHRINE_SOUNDS[shrine_sound_index]
+	shrine_sound_index = (shrine_sound_index + 1) % SHRINE_SOUNDS.size()
 	shrine_player.play()
+
+
+func play_portal() -> void:
+	portal_player.stop()
+	portal_player.play()
+
+
+func play_item_pickup() -> void:
+	if item_pickup_player == null:
+		return
+	item_pickup_player.stop()
+	item_pickup_player.play()
 
 
 func play_reload() -> void:

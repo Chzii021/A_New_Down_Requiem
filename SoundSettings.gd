@@ -1,6 +1,7 @@
 extends Control
 
 signal volume_changed(category: String, level: float)
+signal sensitivity_changed(level: float)
 signal close_requested
 
 var panel: Panel
@@ -20,7 +21,7 @@ func _ready() -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(shade)
 	panel = Panel.new()
-	panel.size = Vector2(460, 340)
+	panel.size = Vector2(460, 410)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	var frame := StyleBoxFlat.new()
 	frame.bg_color = Color("454545")
@@ -36,15 +37,16 @@ func _ready() -> void:
 	top_line.position = Vector2(3, 3)
 	top_line.size = Vector2(454, 76)
 	panel.add_child(top_line)
-	_label("AUDIO SETTINGS", Vector2(28, 18), Vector2(390, 34), 25, Color("ffffff"), true)
-	_label("ลากแถบเพื่อปรับระดับเสียงทันที", Vector2(30, 54), Vector2(390, 24), 14, Color("d4d4d4"))
+	_label("GAME SETTINGS", Vector2(28, 18), Vector2(390, 34), 25, Color("ffffff"), true)
+	_label("ปรับระดับเสียงและความไวเมาส์", Vector2(30, 54), Vector2(390, 24), 14, Color("d4d4d4"))
 	_add_slider("music", "เพลงประกอบ", 90)
 	_add_slider("gun", "เสียงปืน", 157)
 	_add_slider("effects", "เอฟเฟกต์เกม", 224)
-	_label("Esc  กลับไปเล่น", Vector2(30, 302), Vector2(210, 24), 13, Color("d4d4d4"))
+	_add_slider("sensitivity", "ความไวเมาส์", 291)
+	_label("Esc  กลับไปเล่น", Vector2(30, 370), Vector2(210, 24), 13, Color("d4d4d4"))
 	var close_button := Button.new()
 	close_button.text = "CLOSE"
-	close_button.position = Vector2(285, 293)
+	close_button.position = Vector2(285, 361)
 	close_button.size = Vector2(145, 36)
 	close_button.add_theme_font_override("font", pixel_font)
 	close_button.add_theme_font_size_override("font_size", 19)
@@ -88,9 +90,9 @@ func _add_slider(category: String, caption: String, top: float) -> void:
 	var slider := HSlider.new()
 	slider.position = Vector2(30, top + 26)
 	slider.size = Vector2(398, 28)
-	slider.min_value = 0.0
-	slider.max_value = 100.0
-	slider.step = 1.0
+	slider.min_value = 25.0 if category == "sensitivity" else 0.0
+	slider.max_value = 200.0 if category == "sensitivity" else 100.0
+	slider.step = 5.0 if category == "sensitivity" else 1.0
 	slider.value = 100.0
 	var track := StyleBoxFlat.new()
 	track.bg_color = Color("242424")
@@ -98,7 +100,7 @@ func _add_slider(category: String, caption: String, top: float) -> void:
 	track.set_border_width_all(2)
 	track.set_corner_radius_all(0)
 	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color("60b54c") if category == "music" else (Color("a470da") if category == "gun" else Color("68bfdd"))
+	fill.bg_color = Color("60b54c") if category == "music" else (Color("a470da") if category == "gun" else (Color("a7d35b") if category == "sensitivity" else Color("68bfdd")))
 	fill.set_corner_radius_all(0)
 	slider.add_theme_stylebox_override("slider", track)
 	slider.add_theme_stylebox_override("grabber_area", fill)
@@ -111,14 +113,25 @@ func _add_slider(category: String, caption: String, top: float) -> void:
 
 func set_levels(levels: Dictionary) -> void:
 	for category in sliders.keys():
+		if category == "sensitivity":
+			continue
 		var percent: float = clampf(float(levels.get(category, 1.0)), 0.0, 1.0) * 100.0
 		sliders[category].set_value_no_signal(percent)
 		values[category].text = "%d%%" % int(round(percent))
 
 
+func set_sensitivity(level: float) -> void:
+	var percent := clampf(level, 0.25, 2.0) * 100.0
+	sliders["sensitivity"].set_value_no_signal(percent)
+	values["sensitivity"].text = "%d%%" % int(round(percent))
+
+
 func _on_slider_changed(percent: float, category: String) -> void:
 	values[category].text = "%d%%" % int(round(percent))
-	volume_changed.emit(category, percent / 100.0)
+	if category == "sensitivity":
+		sensitivity_changed.emit(percent / 100.0)
+	else:
+		volume_changed.emit(category, percent / 100.0)
 
 
 func _layout() -> void:
