@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bsp1tj6igkkss"
+path="res://.godot/imported/Silent Hill 2 OST - White Noiz.mp3-e7b7af2b6a7ef0005e5a97615e039556.mp3str"
+
+[deps]
+
+source_file="res://audio/Silent Hill 2 OST - White Noiz.mp3"
+dest_files=["res://.godot/imported/Silent Hill 2 OST - White Noiz.mp3-e7b7af2b6a7ef0005e5a97615e039556.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

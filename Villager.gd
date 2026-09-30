@@ -49,7 +49,7 @@ func _ready() -> void:
 	var font = preload("res://PixelFont.gd").make()
 	hp_text.font = font
 	health_anchor.add_child(hp_text)
-	set_health(13 if variant==4 else 5,13 if variant==4 else 5)
+	set_health(30 if variant==4 else 5,30 if variant==4 else 5)
 
 func _health_quad(label: String, dimensions: Vector2, tint: Color, z: float) -> MeshInstance3D:
 	var quad=QuadMesh.new()

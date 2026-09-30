@@ -11,10 +11,15 @@ const BOSS_SPIRIT_INTERVAL = 1.5
 const BOSS_SPIRIT_SPEED = 16.0
 const BOSS_MAP_SCALE = 0.78
 const VILLAGER_HP = 5
+const BOSS_HP = 50
+const BOSS_HEADSHOT_DAMAGE = 5
 const RUN_SPEED = 7.4
 const VILLAGER_SPEED = RUN_SPEED
 const VILLAGER_AGGRO_RANGE = 30.0
-const PORTAL_TRIGGER_RANGE = 1.7
+const BOSS_VILLAGER_SPEED = 5.0
+const BOSS_VILLAGER_AGGRO_RANGE = 36.0
+const BOSS_VILLAGER_SPACING = 2.3
+const PORTAL_TRIGGER_RANGE = 1.0
 const STAGE_SPAWN = Vector3(0.0, 0.2, 15.0)
 const RESPAWNS_PER_STAGE = 2
 const RESPAWN_PROTECTION = 3.0
@@ -34,6 +39,10 @@ const SPECIAL_AIM_DISTANCE = 10000.0
 const BOSS_SPECIAL_COOLDOWN = 2.0
 const MAP_LAYOUT = preload("res://MapLayout.gd")
 const RELICS = preload("res://RelicWeapons.gd")
+const STAGE_PROGRESS = preload("res://StageProgress.gd")
+const PORTAL_WARP = preload("res://PortalWarp.gd")
+const STORY_INTRO = preload("res://StoryIntro.gd")
+const VICTORY_SCREEN = preload("res://VictoryScreen.gd")
 
 var rng = RandomNumberGenerator.new()
 var material_cache = {}
@@ -123,6 +132,8 @@ var ui_font: SystemFont
 var hud
 var game_audio: Node
 var sound_settings: Control
+var story_intro: CanvasLayer
+var victory_screen: CanvasLayer
 var victory_pending = false
 
 
@@ -130,6 +141,7 @@ func _ready() -> void:
 	rng.seed = 2047
 	_make_world()
 	_make_player()
+	_prepare_stage_start()
 	_make_pickups()
 	_make_enemies()
 	_make_ui()
@@ -145,7 +157,48 @@ func _ready() -> void:
 	sound_settings.call("set_sensitivity", game_audio.call("get_look_sensitivity"))
 	_update_camera(0.0)
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if stage == 1:
+		_start_story_intro()
+	else:
+		_show_message("เข้าสู่แผนที่ %d • บันทึกจุดเกิดแล้ว • สำรวจศาลและช่วยชาวบ้าน" % stage, 7.0)
+
+
+func _start_story_intro() -> void:
+	game_audio.call("play_story_music")
+	story_intro = STORY_INTRO.new()
+	story_intro.name = "StoryIntro"
+	story_intro.completed.connect(_end_story_intro)
+	add_child(story_intro)
+	get_tree().paused = true
+
+
+func _end_story_intro() -> void:
+	get_tree().paused = false
+	story_intro.queue_free()
+	story_intro = null
+	game_audio.call("play_game_music")
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_show_message("บันทึกจุดเกิดแล้ว • เก็บชิ้นส่วนปืนกระติบ ไหว้ศาลและช่วยชาวบ้าน", 7.0)
+
+
+func _prepare_stage_start() -> void:
+	if stage == 1:
+		return
+	for previous_stage in range(stage - 1):
+		rescued_total += MAP_VILLAGER_COUNTS[previous_stage]
+	has_pistol = true
+	avatar.gun.visible = true
+	first_weapon.visible = first_person
+	ammo = 8
+	reserve = 160
+	if stage >= 3:
+		assembled = true
+		avatar.call("set_rifle", true)
+		first_weapon.call("set_rifle", true)
+		ammo = 20
+		reserve = 240 if stage == 4 else 220
+	if stage == 4:
+		special_item_found = true
 
 
 func _mat(color: Color, luminous: bool = false) -> StandardMaterial3D:
@@ -567,9 +620,12 @@ func _add_villager(place: Vector3, villager_name: String, boss: bool, encounter_
 	head_collision.shape = head_shape
 	head_area.add_child(head_collision)
 	root.get_node("ClothesAndHead/FaceAndHair").add_child(head_area)
-	var maximum = 13 if boss else VILLAGER_HP
+	var maximum = BOSS_HP if boss else VILLAGER_HP
+	var movement_speed := 1.05 if boss else VILLAGER_SPEED
+	if encounter_stage == 4 and not boss:
+		movement_speed = BOSS_VILLAGER_SPEED
 	root.call("set_health",maximum,maximum)
-	enemies.append({"node":root,"area":target_area,"head_area":head_area,"name":villager_name,"boss":boss,"hp":maximum,"max_hp":maximum,"alive":true,"aggroed":encounter_stage == 4 and not boss,"speed":1.05 if boss else VILLAGER_SPEED,"stage":encounter_stage,"next_attack":0.0,"attack_remaining":0.0,"attack_landed":false})
+	enemies.append({"node":root,"area":target_area,"head_area":head_area,"name":villager_name,"boss":boss,"hp":maximum,"max_hp":maximum,"alive":true,"aggroed":false,"speed":movement_speed,"stage":encounter_stage,"next_attack":0.0,"attack_remaining":0.0,"attack_landed":false})
 
 
 func _make_ui() -> void:
@@ -605,6 +661,8 @@ func _ui_label(parent: Control, content: String, pos: Vector2, dimensions: Vecto
 
 
 func _input(event: InputEvent) -> void:
+	if is_instance_valid(victory_screen):
+		return
 	if sound_settings != null and sound_settings.visible:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not finished:
@@ -649,7 +707,7 @@ func _input(event: InputEvent) -> void:
 
 func _restart_game() -> void:
 	if finished:
-		get_tree().reload_current_scene()
+		STAGE_PROGRESS.start_stage(get_tree(), stage)
 
 
 func _prepare_special_test() -> void:
@@ -1127,7 +1185,8 @@ func _update_enemies(delta: float) -> void:
 		var displacement = player.global_position - enemy_node.global_position
 		displacement.y = 0.0
 		var distance = displacement.length()
-		var in_aggro_range = distance <= VILLAGER_AGGRO_RANGE
+		var aggro_range = BOSS_VILLAGER_AGGRO_RANGE if enemy["stage"] == 4 else VILLAGER_AGGRO_RANGE
+		var in_aggro_range = distance <= aggro_range
 		if not enemy["boss"] and in_aggro_range:
 			enemy["aggroed"] = true
 		var chasing = not enemy["boss"] and bool(enemy["aggroed"])
@@ -1158,7 +1217,20 @@ func _update_enemies(delta: float) -> void:
 		var approaching = chasing and distance > 1.45
 		enemy_node.call("set_walking", approaching, float(enemy["speed"]))
 		if approaching:
-			enemy_node.global_position += displacement.normalized() * minf(float(enemy["speed"]) * delta, distance - 1.45)
+			var movement_direction := displacement.normalized()
+			if enemy["stage"] == 4:
+				var separation := Vector3.ZERO
+				for other in enemies:
+					if other["node"] == enemy_node or not other["alive"] or other["boss"] or other["stage"] != stage:
+						continue
+					var offset: Vector3 = enemy_node.global_position - other["node"].global_position
+					offset.y = 0.0
+					var gap := offset.length()
+					if gap > 0.001 and gap < BOSS_VILLAGER_SPACING:
+						separation += offset / gap * (1.0 - gap / BOSS_VILLAGER_SPACING)
+				if separation.length_squared() > 0.0001:
+					movement_direction = (movement_direction + separation * 1.5).normalized()
+			enemy_node.global_position += movement_direction * minf(float(enemy["speed"]) * delta, distance - 1.45)
 			enemy_node.rotation.y = atan2(-displacement.x, -displacement.z)
 
 
@@ -1300,7 +1372,9 @@ func _shoot() -> void:
 			spirit_hit = not guarded
 			if not guarded:
 				crosshair.hit()
-			var damage = int(enemies[enemy_id]["hp"]) if collider.get_meta("headshot", false) else (2 if assembled else 1)
+			var damage: int = 2 if assembled else 1
+			if collider.get_meta("headshot", false):
+				damage = BOSS_HEADSHOT_DAMAGE if enemies[enemy_id]["boss"] else int(enemies[enemy_id]["hp"])
 			_hit_enemy(enemy_id, damage)
 	weapon_model.call("fire_trace",end_point,impact_normal,not result.is_empty(),spirit_hit)
 
@@ -1391,55 +1465,12 @@ func _check_stage_clear() -> void:
 
 
 func _make_stage_portal() -> void:
-	portal_node = Node3D.new()
+	portal_node = preload("res://StagePortal.gd").new()
 	portal_node.name = "StagePortal"
 	add_child(portal_node)
 	var hub: Vector2 = MAP_LAYOUT.routes(stage)[0][1]
 	portal_node.global_position = current_map.to_global(Vector3(hub.x, 0.0, hub.y))
-	var surface = MeshInstance3D.new()
-	surface.name = "PortalSurface"
-	var surface_mesh = QuadMesh.new()
-	surface_mesh.size = Vector2(1.6, 2.35)
-	surface.mesh = surface_mesh
-	surface.position = Vector3(0.0, 1.08, 0.0)
-	var portal_shader = Shader.new()
-	portal_shader.code = """
-	shader_type spatial;
-	render_mode unshaded, cull_disabled, blend_mix, depth_draw_never;
-
-	float hash_cell(vec2 cell) {
-		return fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
-	}
-
-	void fragment() {
-		vec2 point = UV * 2.0 - 1.0;
-		float radius = length(point);
-		float angle = atan(point.y, point.x);
-		float edge_wobble = sin(angle * 7.0 + TIME * 0.16) * 0.055 + sin(angle * 13.0 - TIME * 0.21) * 0.035 + sin(angle * 23.0 + TIME * 0.12) * 0.018;
-		float edge_distance = 1.0 + edge_wobble - radius;
-		float turbulence = sin(angle * 3.0 + radius * 12.0 + TIME * 0.35) * 0.32;
-		float spiral = sin(radius * 34.0 - angle * 3.4 + turbulence + TIME * 0.55);
-		float bands = smoothstep(-0.48, 0.28, spiral);
-		vec3 color = mix(vec3(0.035, 0.39, 0.19), vec3(0.19, 0.61, 0.24), bands);
-		color = mix(color, vec3(0.66, 0.84, 0.29), smoothstep(0.48, 0.82, spiral));
-		float rim = 1.0 - smoothstep(0.015, 0.11, abs(edge_distance));
-		color = mix(color, vec3(0.76, 0.94, 0.39), rim * 0.78);
-		float fleck_grid = hash_cell(floor(UV * vec2(18.0, 21.0)));
-		vec2 local_cell = fract(UV * vec2(18.0, 21.0));
-		vec2 fleck_center = vec2(hash_cell(floor(UV * vec2(18.0, 21.0)) + 4.7), hash_cell(floor(UV * vec2(18.0, 21.0)) + 9.2));
-		float fleck_radius = mix(0.08, 0.22, hash_cell(floor(UV * vec2(18.0, 21.0)) + 2.1));
-		float flecks = (1.0 - smoothstep(fleck_radius, fleck_radius + 0.07, distance(local_cell, fleck_center))) * step(0.73, fleck_grid) * smoothstep(0.52, 0.86, radius);
-		color = mix(color, vec3(0.94, 0.98, 0.82), flecks);
-		float edge = smoothstep(-0.018, 0.018, edge_distance);
-		ALBEDO = color;
-		EMISSION = color * 0.18;
-		ALPHA = edge;
-	}
-	"""
-	var surface_material = ShaderMaterial.new()
-	surface_material.shader = portal_shader
-	surface.material_override = surface_material
-	portal_node.add_child(surface)
+	game_audio.call("start_portal_ambience", portal_node.global_position)
 
 
 func _reload() -> void:
@@ -1567,6 +1598,25 @@ func _advance_stage() -> void:
 		return
 	transition_pending = true
 	portal_open = false
+	shot_requested = false
+	trigger_held = false
+	game_audio.call("stop_portal_ambience")
+	game_audio.call("play_portal_travel")
+	var warp := PORTAL_WARP.new()
+	add_child(warp)
+	await warp.play_in()
+	if not is_inside_tree():
+		return
+	_commit_stage_advance()
+	await get_tree().process_frame
+	await warp.play_out()
+	warp.queue_free()
+	game_audio.call("fade_portal_travel")
+	transition_pending = false
+	_show_message("เข้าสู่แผนที่ %d • บันทึกจุดเกิดแล้ว • สำรวจศาลและช่วยชาวบ้าน" % stage, 4.0)
+
+
+func _commit_stage_advance() -> void:
 	if is_instance_valid(portal_node):
 		portal_node.queue_free()
 	portal_node = null
@@ -1595,7 +1645,7 @@ func _advance_stage() -> void:
 	rescued_stage = 0
 	health = MAX_HP
 	respawns_left = RESPAWNS_PER_STAGE
-	respawn_protection = 0.0
+	respawn_protection = RESPAWN_PROTECTION
 	if assembled:
 		reserve = maxi(reserve, 240 if stage == 4 else 220)
 	player.global_position = STAGE_SPAWN
@@ -1605,8 +1655,7 @@ func _advance_stage() -> void:
 	_load_map()
 	_make_pickups()
 	_make_enemies()
-	transition_pending = false
-	_show_message("เข้าสู่แผนที่ %d • บันทึกจุดเกิดแล้ว • สำรวจศาลและช่วยชาวบ้าน" % stage, 4.0)
+	STAGE_PROGRESS.unlock_stage(stage)
 
 
 func _update_ui() -> void:
@@ -1707,7 +1756,7 @@ func _handle_player_death() -> void:
 	for enemy in enemies:
 		enemy["attack_remaining"] = 0.0
 		enemy["attack_landed"] = false
-		enemy["aggroed"] = enemy["stage"] == 4 and not enemy["boss"]
+		enemy["aggroed"] = false
 		enemy["node"].call("set_walking", false)
 	_show_message("กลับมาที่จุดเซฟ • เหลือโอกาส %d/%d" % [respawns_left, RESPAWNS_PER_STAGE], 3.0)
 
@@ -1719,10 +1768,15 @@ func _finish(victory: bool) -> void:
 	won = victory
 	trigger_held = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-	end_panel.visible = true
 	if victory:
-		hud.end_heading.text = "VICTORY"
-		end_label.text = "ยายจ่อยเป็นอิสระแล้ว!\nวิกรมช่วยชาวบ้านครบทั้ง 4 แผนที่"
+		end_panel.hide()
+		hud.hide()
+		victory_screen = VICTORY_SCREEN.new()
+		victory_screen.restart_requested.connect(_restart_game)
+		victory_screen.menu_requested.connect(_return_to_start_menu)
+		add_child(victory_screen)
+		game_audio.call("play_victory")
 	else:
+		end_panel.visible = true
 		hud.end_heading.text = "GAME OVER"
 		end_label.text = "ใช้โอกาสเกิดใหม่ครบ 2 ครั้งในด่านนี้\nเริ่มใหม่จากแผนที่แรก"

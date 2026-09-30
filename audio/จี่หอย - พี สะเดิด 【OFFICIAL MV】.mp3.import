@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://m31tenc2wp5a"
+path="res://.godot/imported/จี่หอย - พี สะเดิด 【OFFICIAL MV】.mp3-a8af460cf4676ddb9065be787b8e23ef.mp3str"
+
+[deps]
+
+source_file="res://audio/จี่หอย - พี สะเดิด 【OFFICIAL MV】.mp3"
+dest_files=["res://.godot/imported/จี่หอย - พี สะเดิด 【OFFICIAL MV】.mp3-a8af460cf4676ddb9065be787b8e23ef.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

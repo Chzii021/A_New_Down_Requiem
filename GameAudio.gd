@@ -11,15 +11,22 @@ const SHRINE_SOUNDS = [
 	preload("res://audio/End_portal_eye_place3.ogg.mp3")
 ]
 const PORTAL_ACTIVATION = preload("res://audio/end_portal_activation.mp3")
+const PORTAL_AMBIENCE = preload("res://audio/portal_ambience.wav")
+const PORTAL_TRAVEL = preload("res://audio/Nether Portal Travel Sound (Minecraft) - Sound Effect for editing.mp3")
+const VICTORY_SOUND = preload("res://audio/minecraftachievement.mp3")
 const RELOAD = preload("res://audio/reload_original.wav")
 const ITEM_PICKUP_PATH = "res://audio/minecraft_item_pickup.mp3"
 const SETTINGS_PATH = "user://audio_settings.cfg"
 const MUSIC_BASE_DB = -16.44
+const MENU_MUSIC_PATH = "res://audio/Resident Evil 1 OST - Save Room.mp3"
+const STORY_MUSIC = preload("res://audio/Silent Hill 2 OST - White Noiz.mp3")
+const VICTORY_MUSIC = preload("res://audio/จี่หอย - พี สะเดิด 【OFFICIAL MV】.mp3")
 const GUN_BASE_DB = -5.0
 const HIT_BASE_DB = -8.0
 const SPIRIT_BASE_DB = -9.02
 
 var music_player: AudioStreamPlayer
+var gameplay_music_stream: AudioStream
 var shot_players: Array[AudioStreamPlayer] = []
 var shot_index = 0
 var hit_players: Array[AudioStreamPlayer] = []
@@ -29,17 +36,24 @@ var craft_player: AudioStreamPlayer
 var shrine_player: AudioStreamPlayer
 var shrine_sound_index = 0
 var portal_player: AudioStreamPlayer
+var portal_ambience_player: AudioStreamPlayer3D
+var portal_travel_player: AudioStreamPlayer
+var portal_travel_fade: Tween
+var victory_player: AudioStreamPlayer
+var victory_sound_playing := false
 var reload_player: AudioStreamPlayer
 var item_pickup_player: AudioStreamPlayer
 var volume_levels = {"music": 1.0, "gun": 1.0, "effects": 1.0}
 var look_sensitivity = 1.0
+var music_base_db := MUSIC_BASE_DB
 
 
 func _ready() -> void:
 	_load_settings()
 	music_player = AudioStreamPlayer.new()
 	music_player.name = "BackgroundMusic"
-	music_player.stream = _preferred_stream("music", AMBIENT)
+	gameplay_music_stream = _preferred_stream("music", AMBIENT)
+	music_player.stream = gameplay_music_stream
 	add_child(music_player)
 	music_player.finished.connect(_repeat_music)
 	var shot_stream = _preferred_stream("gunshot", GUNSHOT)
@@ -60,6 +74,18 @@ func _ready() -> void:
 	craft_player = _one_shot("CraftSound", _preferred_stream("craft", CRAFT), -5.0)
 	shrine_player = _one_shot("ShrineSound", SHRINE_SOUNDS[0], -7.0)
 	portal_player = _one_shot("PortalActivationSound", PORTAL_ACTIVATION, -7.0)
+	var ambience_stream := PORTAL_AMBIENCE.duplicate() as AudioStreamWAV
+	ambience_stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	portal_ambience_player = AudioStreamPlayer3D.new()
+	portal_ambience_player.name = "PortalNearbySound"
+	portal_ambience_player.stream = ambience_stream
+	portal_ambience_player.unit_size = 4.0
+	portal_ambience_player.max_distance = 26.0
+	portal_ambience_player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+	add_child(portal_ambience_player)
+	portal_travel_player = _one_shot("PortalTravelSound", PORTAL_TRAVEL, -4.0)
+	victory_player = _one_shot("VictorySound", VICTORY_SOUND, -3.0)
+	victory_player.finished.connect(_victory_sound_finished)
 	reload_player = _one_shot("ReloadSound", _preferred_stream("reload", RELOAD), -5.0)
 	if ResourceLoader.exists(ITEM_PICKUP_PATH):
 		var item_pickup_stream: AudioStream = load(ITEM_PICKUP_PATH)
@@ -79,6 +105,34 @@ func _load_settings() -> void:
 
 func get_volume_levels() -> Dictionary:
 	return volume_levels.duplicate()
+
+
+func play_menu_music() -> void:
+	var menu_stream := load(MENU_MUSIC_PATH) as AudioStreamMP3
+	if menu_stream == null:
+		return
+	menu_stream.loop = true
+	music_base_db = -24.0
+	music_player.stop()
+	music_player.stream = menu_stream
+	_apply_volumes()
+	music_player.play()
+
+
+func play_story_music() -> void:
+	_switch_music(STORY_MUSIC, -22.0)
+
+
+func play_game_music() -> void:
+	_switch_music(gameplay_music_stream, MUSIC_BASE_DB)
+
+
+func _switch_music(stream: AudioStream, base_db: float) -> void:
+	music_player.stop()
+	music_player.stream = stream
+	music_base_db = base_db
+	_apply_volumes()
+	music_player.play()
 
 
 func get_look_sensitivity() -> float:
@@ -113,7 +167,7 @@ func _scaled_db(base_db: float, category: String) -> float:
 
 
 func _apply_volumes() -> void:
-	music_player.volume_db = _scaled_db(MUSIC_BASE_DB, "music")
+	music_player.volume_db = _scaled_db(music_base_db - (13.0 if victory_sound_playing else 0.0), "music")
 	for player in shot_players:
 		player.volume_db = _scaled_db(GUN_BASE_DB, "gun")
 	for player in hit_players:
@@ -121,6 +175,9 @@ func _apply_volumes() -> void:
 	craft_player.volume_db = _scaled_db(-5.0, "effects")
 	shrine_player.volume_db = _scaled_db(-7.0, "effects")
 	portal_player.volume_db = _scaled_db(-7.0, "effects")
+	portal_ambience_player.volume_db = _scaled_db(-9.0, "effects")
+	portal_travel_player.volume_db = _scaled_db(-4.0, "effects")
+	victory_player.volume_db = _scaled_db(-3.0, "effects")
 	reload_player.volume_db = _scaled_db(-5.0, "effects")
 	if item_pickup_player != null:
 		item_pickup_player.volume_db = _scaled_db(-5.0, "effects")
@@ -184,6 +241,45 @@ func play_shrine() -> void:
 func play_portal() -> void:
 	portal_player.stop()
 	portal_player.play()
+
+
+func start_portal_ambience(place: Vector3) -> void:
+	portal_ambience_player.stop()
+	portal_ambience_player.global_position = place + Vector3(0.0, 1.6, 0.0)
+	portal_ambience_player.play()
+
+
+func stop_portal_ambience() -> void:
+	portal_ambience_player.stop()
+
+
+func play_portal_travel() -> void:
+	portal_player.stop()
+	if portal_travel_fade != null and portal_travel_fade.is_running():
+		portal_travel_fade.kill()
+	portal_travel_player.volume_db = _scaled_db(-4.0, "effects")
+	portal_travel_player.stop()
+	portal_travel_player.play()
+
+
+func fade_portal_travel() -> void:
+	if not portal_travel_player.playing:
+		return
+	portal_travel_fade = create_tween()
+	portal_travel_fade.tween_property(portal_travel_player, "volume_db", -80.0, 0.65)
+	portal_travel_fade.tween_callback(portal_travel_player.stop)
+
+
+func play_victory() -> void:
+	victory_sound_playing = true
+	_switch_music(VICTORY_MUSIC, -20.0)
+	victory_player.stop()
+	victory_player.play()
+
+
+func _victory_sound_finished() -> void:
+	victory_sound_playing = false
+	_apply_volumes()
 
 
 func play_item_pickup() -> void:

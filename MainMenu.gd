@@ -1,9 +1,14 @@
 extends Control
 
-const GAME_SCENE := "res://Main.tscn"
+const STAGE_SELECT_SCENE := "res://StageSelect.tscn"
+const MENU_MUSIC = preload("res://MenuMusic.gd")
 
 var pixel_font: Font
+var menu_background: TextureRect
+var menu_shade: ColorRect
+var title_logo: TextureRect
 var menu_panel: PanelContainer
+var menu_buttons: VBoxContainer
 var credits_panel: PanelContainer
 var sound_settings: Control
 var game_audio: Node
@@ -22,79 +27,57 @@ func _ready() -> void:
 
 
 func _build_background() -> void:
-	var background := TextureRect.new()
-	background.texture = load("res://menu/menu_background.png")
-	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(background)
-	move_child(background, 0)
+	menu_background = TextureRect.new()
+	menu_background.name = "MenuBackground"
+	menu_background.texture = load("res://menu/ChatGPT Image Oct 1, 2026, 02_58_31 AM.png")
+	menu_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	menu_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	menu_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	menu_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var background_material := ShaderMaterial.new()
+	background_material.shader = preload("res://menu/main_menu_sunset.gdshader")
+	menu_background.material = background_material
+	add_child(menu_background)
+	move_child(menu_background, 0)
 
-	var shade := ColorRect.new()
-	shade.color = Color(0.035, 0.045, 0.035, 0.28)
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(shade)
+	menu_shade = ColorRect.new()
+	menu_shade.color = Color(0.035, 0.045, 0.035, 0.1)
+	menu_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	menu_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(menu_shade)
 
 
 func _build_title() -> void:
-	var logo := TextureRect.new()
-	logo.name = "TitleLogo"
-	logo.texture = load("res://menu/title_logo.png")
-	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(logo)
-
-	var game_title := Label.new()
-	game_title.name = "GameTitle"
-	game_title.text = "BAN KERD: TAI NGAO WINYAN"
-	game_title.add_theme_font_override("font", pixel_font)
-	game_title.add_theme_font_size_override("font_size", 18)
-	game_title.add_theme_color_override("font_color", Color("fff1c5"))
-	game_title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	game_title.add_theme_constant_override("shadow_offset_y", 2)
-	game_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(game_title)
-
-	var subtitle := Label.new()
-	subtitle.name = "Subtitle"
-	subtitle.text = "A FOLK-HORROR ACTION ADVENTURE"
-	subtitle.add_theme_font_override("font", pixel_font)
-	subtitle.add_theme_font_size_override("font_size", 12)
-	subtitle.add_theme_color_override("font_color", Color("e2ddc9"))
-	subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(subtitle)
+	title_logo = TextureRect.new()
+	title_logo.name = "TitleLogo"
+	title_logo.texture = load("res://menu/title_logo.png")
+	title_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	title_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	title_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(title_logo)
 
 
 func _build_menu() -> void:
 	menu_panel = PanelContainer.new()
 	menu_panel.name = "MenuPanel"
-	menu_panel.add_theme_stylebox_override("panel", _panel_style())
+	menu_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	add_child(menu_panel)
 
 	var margin := MarginContainer.new()
 	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 22)
+		margin.add_theme_constant_override(side, 0)
 	menu_panel.add_child(margin)
 
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 11)
+	content.name = "MenuButtons"
+	content.add_theme_constant_override("separation", 12)
+	menu_buttons = content
 	margin.add_child(content)
 
-	var heading := Label.new()
-	heading.text = "MAIN MENU"
-	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	heading.add_theme_font_override("font", pixel_font)
-	heading.add_theme_font_size_override("font_size", 22)
-	heading.add_theme_color_override("font_color", Color("fff1c5"))
-	content.add_child(heading)
-
-	_add_image_button(content, "res://menu/button_start.png", _start_game)
-	_add_image_button(content, "res://menu/button_setting.png", _open_settings)
-	_add_image_button(content, "res://menu/button_credit.png", _open_credits)
-	_add_image_button(content, "res://menu/button_exit.png", _exit_game)
+	_add_image_button(content, "res://menu/ChatGPT Image Oct 1, 2026, 03_15_28 AM.png", Rect2(32, 88, 2016, 608), _start_game)
+	_add_image_button(content, "res://menu/ChatGPT Image Oct 1, 2026, 03_15_29 AM.png", Rect2(48, 72, 2080, 596), _open_settings)
+	_add_image_button(content, "res://menu/ChatGPT Image Oct 1, 2026, 03_15_33 AM.png", Rect2(52, 100, 1948, 556), _open_credits)
+	_add_image_button(content, "res://menu/ChatGPT Image Oct 1, 2026, 03_15_31 AM.png", Rect2(56, 104, 1940, 552), _exit_game)
 
 
 func _build_credits() -> void:
@@ -110,26 +93,51 @@ func _build_credits() -> void:
 	credits_panel.add_child(margin)
 
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 18)
+	content.add_theme_constant_override("separation", 16)
+	content.alignment = BoxContainer.ALIGNMENT_CENTER
 	margin.add_child(content)
 
 	var heading := Label.new()
 	heading.text = "CREDITS"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_override("font", pixel_font)
-	heading.add_theme_font_size_override("font_size", 26)
+	heading.add_theme_font_size_override("font_size", 28)
 	heading.add_theme_color_override("font_color", Color("fff1c5"))
 	content.add_child(heading)
 
+	var game_title := Label.new()
+	game_title.text = "A NEW DAWN"
+	game_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	game_title.add_theme_font_override("font", pixel_font)
+	game_title.add_theme_font_size_override("font_size", 26)
+	game_title.add_theme_color_override("font_color", Color("fff1c5"))
+	content.add_child(game_title)
+
+	var group_credit := Label.new()
+	group_credit.text = "CREATED BY GROUP 15"
+	group_credit.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	group_credit.add_theme_font_override("font", pixel_font)
+	group_credit.add_theme_font_size_override("font_size", 20)
+	group_credit.add_theme_color_override("font_color", Color("fff1c5"))
+	content.add_child(group_credit)
+
 	var details := Label.new()
-	details.text = "BAN KERD: TAI NGAO WINYAN\n\nA folk-horror action adventure\n\nMade with Godot Engine"
+	details.text = "ชวกร สมทรัพย์ — 673380312-5\nมหาสมุทร แมทโอ เจแดน — 673380339-5\nเสรีธรรม ประทุมรัตน์ — 673380359-9"
 	details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	details.autowrap_mode = TextServer.AUTOWRAP_OFF
 	details.add_theme_font_override("font", pixel_font)
-	details.add_theme_font_size_override("font_size", 15)
+	details.add_theme_font_size_override("font_size", 19)
 	details.add_theme_color_override("font_color", Color("eee8d7"))
-	details.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(details)
+
+	var made_with := Label.new()
+	made_with.text = "MADE WITH GODOT ENGINE"
+	made_with.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	made_with.add_theme_font_override("font", pixel_font)
+	made_with.add_theme_font_size_override("font_size", 14)
+	made_with.add_theme_color_override("font_color", Color("fff1c5"))
+	content.add_child(made_with)
 
 	var back := _text_button("BACK")
 	back.pressed.connect(_close_credits)
@@ -137,10 +145,10 @@ func _build_credits() -> void:
 
 
 func _build_settings() -> void:
-	game_audio = preload("res://GameAudio.gd").new()
-	game_audio.process_mode = Node.PROCESS_MODE_ALWAYS
-	add_child(game_audio)
+	game_audio = MENU_MUSIC.ensure(get_tree(), self)
 	sound_settings = preload("res://SoundSettings.gd").new()
+	sound_settings.set("show_game_return_hint", false)
+	sound_settings.set("backdrop_alpha", 0.1)
 	add_child(sound_settings)
 	sound_settings.hide()
 	sound_settings.connect("volume_changed", Callable(game_audio, "set_volume_level"))
@@ -151,12 +159,15 @@ func _build_settings() -> void:
 	sound_settings.call("set_sensitivity", game_audio.call("get_look_sensitivity"))
 
 
-func _add_image_button(parent: VBoxContainer, texture_path: String, action: Callable) -> void:
+func _add_image_button(parent: VBoxContainer, texture_path: String, crop: Rect2, action: Callable) -> void:
 	var button := TextureButton.new()
-	button.texture_normal = load(texture_path)
+	var cropped_texture := AtlasTexture.new()
+	cropped_texture.atlas = load(texture_path)
+	cropped_texture.region = crop
+	button.texture_normal = cropped_texture
 	button.ignore_texture_size = true
-	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-	button.custom_minimum_size = Vector2(300, 65)
+	button.stretch_mode = TextureButton.STRETCH_SCALE
+	button.custom_minimum_size = Vector2(350, 100)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.pressed.connect(action)
@@ -201,43 +212,53 @@ func _button_style(color: Color) -> StyleBoxFlat:
 func _layout() -> void:
 	if not is_instance_valid(menu_panel):
 		return
-	var margin := clampf(size.x * 0.045, 20.0, 58.0)
-	var panel_width := minf(390.0, size.x * 0.43)
-	menu_panel.size = Vector2(panel_width, minf(420.0, size.y * 0.72))
-	menu_panel.position = Vector2(size.x - panel_width - margin, (size.y - menu_panel.size.y) * 0.5)
-	var logo := get_node("TitleLogo") as TextureRect
-	logo.position = Vector2(margin, size.y * 0.12)
-	logo.size = Vector2(minf(590.0, size.x * 0.53), 170.0)
-	var game_title := get_node("GameTitle") as Label
-	game_title.position = Vector2(margin + 16.0, size.y * 0.43)
-	game_title.size = Vector2(minf(520.0, size.x * 0.48), 32.0)
-	var subtitle := get_node("Subtitle") as Label
-	subtitle.position = Vector2(margin + 16.0, size.y * 0.43 + 36.0)
-	subtitle.size = Vector2(minf(520.0, size.x * 0.48), 24.0)
-	credits_panel.size = Vector2(minf(530.0, size.x - 40.0), minf(350.0, size.y - 40.0))
+	var button_width := minf(350.0, size.x * 0.82)
+	var button_height := minf(100.0, maxf(52.0, size.y * 0.139))
+	button_height = minf(button_height, button_width / 3.5)
+	var separation := minf(20.0, size.y * 0.0278)
+	menu_buttons.add_theme_constant_override("separation", int(roundf(separation)))
+	for button in menu_buttons.get_children():
+		button.custom_minimum_size = Vector2(button_width, button_height)
+	var menu_height := button_height * 4.0 + separation * 3.0
+	menu_panel.size = Vector2(button_width, menu_height)
+	menu_panel.position = Vector2((size.x - button_width) * 0.5, minf(size.y * 0.32, size.y - menu_height - 12.0))
+	var logo_width := minf(460.0, size.x * 0.62)
+	var logo_height := minf(192.0, size.y * 0.28)
+	title_logo.position = Vector2((size.x - logo_width) * 0.5, size.y * 0.01)
+	title_logo.size = Vector2(logo_width, logo_height)
+	credits_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	var credits_width := minf(520.0, minf(size.x - 40.0, size.y - 40.0))
+	var credits_height := minf(500.0, size.y - 40.0)
+	credits_panel.size = Vector2(credits_width, credits_height)
 	credits_panel.position = (size - credits_panel.size) * 0.5
 
 
 func _start_game() -> void:
-	game_audio.queue_free()
-	get_tree().change_scene_to_file(GAME_SCENE)
+	get_tree().change_scene_to_file(STAGE_SELECT_SCENE)
 
 
 func _open_settings() -> void:
+	title_logo.hide()
+	menu_panel.hide()
 	sound_settings.show()
 
 
 func _close_settings() -> void:
 	sound_settings.hide()
+	title_logo.show()
+	menu_panel.show()
 
 
 func _open_credits() -> void:
+	_layout()
 	menu_panel.hide()
+	title_logo.hide()
 	credits_panel.show()
 
 
 func _close_credits() -> void:
 	credits_panel.hide()
+	title_logo.show()
 	menu_panel.show()
 
 

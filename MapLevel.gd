@@ -129,7 +129,7 @@ func _house(place: Vector3, wall: Color, roof: Color) -> void:
 		var panel = _box(house, Vector3(x, 3.58, 0), Vector3(2.3, .18, 4.0), roof)
 		panel.rotation.z = .47 if x < 0 else -.47
 	for step in range(4):
-		_box(house, Vector3(0, .22 + step * .32, -2.0 - step * .35), Vector3(1.2, .1, .34), Color("846145"))
+		_box(house, Vector3(0, 1.18 - step * .32, -2.0 - step * .35), Vector3(1.2, .1, .34), Color("846145"))
 
 
 func _granary(place: Vector3) -> void:

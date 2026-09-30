@@ -9,6 +9,8 @@ var panel: Panel
 var sliders = {}
 var values = {}
 var pixel_font: Font
+var show_game_return_hint := true
+var backdrop_alpha := 0.75
 
 
 func _ready() -> void:
@@ -17,7 +19,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	pixel_font = preload("res://PixelFont.gd").make()
 	var shade := ColorRect.new()
-	shade.color = Color(.04, .04, .04, .75)
+	shade.color = Color(.04, .04, .04, backdrop_alpha)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(shade)
@@ -44,9 +46,10 @@ func _ready() -> void:
 	_add_slider("gun", "เสียงปืน", 157)
 	_add_slider("effects", "เอฟเฟกต์เกม", 224)
 	_add_slider("sensitivity", "ความไวเมาส์", 291)
-	_label("Esc  กลับไปเล่น", Vector2(30, 370), Vector2(210, 24), 13, Color("d4d4d4"))
+	if show_game_return_hint:
+		_label("Esc  กลับไปเล่น", Vector2(30, 370), Vector2(210, 24), 13, Color("d4d4d4"))
 	var close_button := Button.new()
-	close_button.text = "CLOSE"
+	close_button.text = "MAIN MENU"
 	close_button.position = Vector2(285, 361)
 	close_button.size = Vector2(145, 36)
 	close_button.add_theme_font_override("font", pixel_font)
@@ -72,7 +75,7 @@ func _ready() -> void:
 	_layout()
 
 
-func _label(content: String, pos: Vector2, dimensions: Vector2, font_size: int, tint: Color, pixel: bool = false) -> Label:
+func _label(content: String, pos: Vector2, dimensions: Vector2, font_size: int, tint: Color, _pixel: bool = false) -> Label:
 	var label := Label.new()
 	label.text = content
 	label.position = pos
