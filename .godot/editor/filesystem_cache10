@@ -1,5 +1,5 @@
 78098b89c88a74ebe8c20117b8754620
-::res://::1790704617
+::res://::1790786059
 AllMapsEditable.gd::GDScript::2332286982404759061::1790699187::0::1::::<>Node3D<><>0<>1<><>::
 AllMapsEditable.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://AllMapsEditable.gd<>res://Map1Morning.tscn<>res://MapLevel.gd<>res://Map2LateMorning.tscn<>res://Map3Dusk.tscn<>res://Map4Night.tscn
 CREDITS.md::TextFile::-1::1790699187::0::1::::<><><>0<>0<><>::
@@ -10,11 +10,13 @@ FirstPersonPreview.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::re
 FirstPersonWeapon.gd::GDScript::5390898921081255367::1790699187::0::1::::<>Node3D<><>0<>0<><>::
 GameAudio.gd::GDScript::900540116752875789::1790704452::0::1::::<>Node<><>0<>0<><>::
 HUDIcon.gd::GDScript::2284562420883161133::1790699187::0::1::::<>Control<><>0<>0<><>::
-IsanHUD.gd::GDScript::2139332624444638184::1790699187::0::1::::<>Control<><>0<>0<><>::
+IsanHUD.gd::GDScript::2139332624444638184::1790785608::0::1::::<>Control<><>0<>0<><>::
 Khene.gd::GDScript::954956463262745188::1790699187::0::1::::<>Node3D<><>0<>0<><>::
 Khene.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://Khene.gd
-main.gd::GDScript::6756223821103529133::1790704452::0::1::::<>Node3D<><>0<>0<><>::
+main.gd::GDScript::6756223821103529133::1790786047::0::1::::<>Node3D<><>0<>0<><>::
 Main.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://main.gd
+MainMenu.gd::GDScript::3099747409044079501::1790786047::0::1::::<>Control<><>0<>0<><>::
+MainMenu.tscn::PackedScene::-1::1790785608::0::1::::<><><>0<>0<><>::res://MainMenu.gd
 Map1Morning.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://MapLevel.gd<>res://Scenery.gd<>res://models/trees/SimpleTree.tscn<>res://models/trees/StylizedTree.tscn<>res://models/trees/BirchTree.tscn<>res://models/trees/PineTree.tscn
 Map2LateMorning.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://MapLevel.gd<>res://Scenery.gd<>res://models/trees/SimpleTree.tscn<>res://models/trees/StylizedTree.tscn<>res://models/trees/BirchTree.tscn<>res://models/trees/PineTree.tscn
 Map3Dusk.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://MapLevel.gd<>res://Scenery.gd<>res://models/trees/SimpleTree.tscn<>res://models/trees/StylizedTree.tscn<>res://models/trees/BirchTree.tscn<>res://models/trees/PineTree.tscn
@@ -35,7 +37,7 @@ Scenery.gd::GDScript::5031590454513805957::1790699187::0::1::::<>Node3D<><>0<>0<
 SceneryPreview.gd::GDScript::2790821148072339463::1790699187::0::1::::<>Node3D<><>0<>0<><>::
 SceneryPreview.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://SceneryPreview.gd
 ShotEffects.gd::GDScript::2164276450275917240::1790699187::0::1::::<>Node3D<><>0<>0<><>::
-SoundSettings.gd::GDScript::8227284135908759123::1790702641::0::1::::<>Control<><>0<>0<><>::
+SoundSettings.gd::GDScript::8227284135908759123::1790786047::0::1::::<>Control<><>0<>0<><>::
 SpecialCharm.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::
 SpecialCharmPreview.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://SpecialCharm.tscn
 SpecialKnife.gd::GDScript::896680504512630872::1790699187::0::1::::<>Node3D<><>0<>0<><>::
@@ -47,7 +49,7 @@ VikramPreview.tscn::PackedScene::-1::1790699187::0::1::::<><><>0<>0<><>::res://V
 VikramRig.gd::GDScript::230865342007613779::1790699187::0::1::::<>Node3D<><>0<>0<><>::
 Villager.gd::GDScript::3255145519197147692::1790699187::0::1::::<>Node3D<><>0<>0<><>::
 WovenPanel.gd::GDScript::3355387780529138858::1790699187::0::1::::<>Panel<><>0<>0<><>::
-::res://audio/::1790704578
+::res://audio/::1790704618
 ambient_original.wav::AudioStreamWAV::4472619177303752179::1790699187::1790699458::1::::<><><>0<>0<>3abc367f225ab8b1d8c28223022e013a<>res://.godot/imported/ambient_original.wav-b87c4988e3854f21839b574067518ee0.sample::
 craft_custom.wav::AudioStreamWAV::2470857682377355114::1790699187::1790699458::1::::<><><>0<>0<>820652819e265069588efe1624b917f3<>res://.godot/imported/craft_custom.wav-4f9a5129b65f2a14ae0b64f386bb423f.sample::
 craft_original.wav::AudioStreamWAV::8712980328507446845::1790699187::1790699458::1::::<><><>0<>0<>699a1d872fa113f9f723e24ea405847c<>res://.godot/imported/craft_original.wav-f2b54a8b850a7c2ba32f88f2826dda31.sample::
@@ -72,6 +74,13 @@ OFL.txt::TextFile::-1::1790699187::0::1::::<><><>0<>0<><>::
 PixelifySans.ttf::FontFile::6739635332630468309::1790699187::1790699457::1::::<><><>0<>0<>9bea1d10364aa490809e2ce2a4efa9ce<>res://.godot/imported/PixelifySans.ttf-fc5a9a3e822b21581d248cfb12b28920.fontdata::
 Unifont-17.0.04.otf::FontFile::2221859561208215125::1790699187::1790699457::1::::<><><>0<>0<>86ceedcee05129f8050746ff954aecf5<>res://.godot/imported/Unifont-17.0.04.otf-982e5952b43a865902fb1986ee614e66.fontdata::
 Unifont-OFL-1.1.txt::TextFile::-1::1790699187::0::1::::<><><>0<>0<><>::
+::res://menu/::1790785907
+button_credit.png::CompressedTexture2D::3783370298562440607::1788404778::1790785907::1::::<><><>0<>0<>a28674e923fc5f71f2bbccbc5c5fd6e6<>res://.godot/imported/button_credit.png-0a9de86c643e8d23a6465785f9f7edac.ctex::
+button_exit.png::CompressedTexture2D::5010247803257728876::1788404778::1790785907::1::::<><><>0<>0<>4cade4c9f26bc0e84bbe3fbc710d7447<>res://.godot/imported/button_exit.png-dd32332cdec8d9528edb448de39f3d72.ctex::
+button_setting.png::CompressedTexture2D::4194776583690544856::1788404778::1790785907::1::::<><><>0<>0<>5a1f21b52997dee8ed6215e7f84df39c<>res://.godot/imported/button_setting.png-eb73dec2ff42bd6869604ae734835458.ctex::
+button_start.png::CompressedTexture2D::1440412578975863774::1788404778::1790785907::1::::<><><>0<>0<>f2e4f0b781d9cc50a892a37ff038599e<>res://.godot/imported/button_start.png-21baf1a0e611690834319635594307d6.ctex::
+menu_background.png::CompressedTexture2D::49093234005656174::1788404778::1790785907::1::::<><><>0<>0<>40291c1bbe92d0f53ee0cf3f78e723fe<>res://.godot/imported/menu_background.png-7e622b5346de08f33bb0af717d73a944.ctex::
+title_logo.png::CompressedTexture2D::1666428780946087512::1788404778::1790785907::1::::<><><>0<>0<>3be0038b03819d4ebce1b6f864960ad6<>res://.godot/imported/title_logo.png-684d7557c0c36e7db38162353b4c0cc3.ctex::
 ::res://models/::1790699188
 VikramWorker.tscn::PackedScene::-1::1790699188::0::1::::<><><>0<>0<><>::
 ::res://models/npcs/::1790699188

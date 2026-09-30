@@ -140,6 +140,7 @@ func _ready() -> void:
 	sound_settings.connect("volume_changed", Callable(game_audio, "set_volume_level"))
 	sound_settings.connect("sensitivity_changed", Callable(game_audio, "set_look_sensitivity"))
 	sound_settings.connect("close_requested", Callable(self, "_close_sound_settings"))
+	sound_settings.connect("start_menu_requested", Callable(self, "_return_to_start_menu"))
 	sound_settings.call("set_levels", game_audio.call("get_volume_levels"))
 	sound_settings.call("set_sensitivity", game_audio.call("get_look_sensitivity"))
 	_update_camera(0.0)
@@ -680,6 +681,12 @@ func _close_sound_settings() -> void:
 	sound_settings.hide()
 	get_tree().paused = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if finished else Input.MOUSE_MODE_CAPTURED)
+
+
+func _return_to_start_menu() -> void:
+	get_tree().paused = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	get_tree().change_scene_to_file("res://MainMenu.tscn")
 
 
 func _start_dash() -> void:

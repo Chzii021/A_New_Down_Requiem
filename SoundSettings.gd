@@ -3,6 +3,7 @@ extends Control
 signal volume_changed(category: String, level: float)
 signal sensitivity_changed(level: float)
 signal close_requested
+signal start_menu_requested
 
 var panel: Panel
 var sliders = {}
@@ -66,7 +67,7 @@ func _ready() -> void:
 	close_button.add_theme_stylebox_override("hover", hover)
 	close_button.add_theme_stylebox_override("pressed", pressed)
 	panel.add_child(close_button)
-	close_button.pressed.connect(func(): close_requested.emit())
+	close_button.pressed.connect(func(): start_menu_requested.emit())
 	resized.connect(_layout)
 	_layout()
 
