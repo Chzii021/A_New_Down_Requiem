@@ -148,11 +148,20 @@ func _layout() -> void:
 
 func _begin_loading() -> void:
 	await get_tree().process_frame
+	status_label.text = "กำลังโหลดแผนที่และทรัพยากร..."
+	if OS.has_feature("web"):
+		# Single-threaded Web exports cannot reliably complete threaded resource requests.
+		await get_tree().process_frame
+		var web_scene := load(GAME_SCENE) as PackedScene
+		if web_scene == null:
+			_show_error(ERR_CANT_OPEN)
+			return
+		_finish_loaded_scene(web_scene)
+		return
 	var result := ResourceLoader.load_threaded_request(GAME_SCENE)
 	if result != OK:
 		_show_error(result)
 		return
-	status_label.text = "กำลังโหลดแผนที่และทรัพยากร..."
 	set_process(true)
 
 
@@ -176,6 +185,10 @@ func _finish_loading() -> void:
 	if game_scene == null:
 		_show_error(ERR_CANT_OPEN)
 		return
+	_finish_loaded_scene(game_scene)
+
+
+func _finish_loaded_scene(game_scene: PackedScene) -> void:
 	progress_bar.value = 100.0
 	percent_label.text = "100%"
 	status_label.text = "กำลังเข้าสู่เกม..."

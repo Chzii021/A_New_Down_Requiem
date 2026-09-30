@@ -149,3 +149,9 @@ HUD ใช้กรอบเทาเข้ม ขอบเหลี่ยมแ
 โมเดลต้นไม้และวิกรมบันทึกเป็นฉาก Godot (.tscn) โดยรวม Mesh, สี, รูปภาพ และอนิเมชันไว้ในไฟล์แล้ว จึงไม่ต้องพึ่งการนำเข้า GLB หรือไฟล์ภาพสีแยก
 
 ชุด CharacterV2 ใส่รายการโฟลเดอร์ใน ZIP ครบแล้ว เลือก Import ใน Godot 4.7 แล้วเลือก ZIP นี้และโฟลเดอร์ปลายทางว่างได้โดยตรง หรือแตก ZIP ทั้งชุดแล้วเลือก project.godot
+
+## เล่นผ่านเว็บ
+
+ไฟล์ Web export อยู่ใน `docs/` และใช้ Godot 4.7 กับ preset `Web` (ปิด Thread Support) เมื่อเปิด GitHub Pages โดยเลือก `Deploy from a branch`, สาขา `GG`, โฟลเดอร์ `/docs` เกมจะอยู่ที่ https://chzii021.github.io/A_New_Down_Requiem/
+
+หลังแก้เกม ให้ส่งออกใหม่ด้วย **Project → Export → Web → Export Project** ไปที่ `docs/index.html` แล้ว Push ไฟล์ใน `docs/` ขึ้นสาขา `GG` อีกครั้ง อย่าเปลี่ยนชื่อไฟล์ `.js`, `.wasm` หรือ `.pck` ที่ Godot สร้าง
