@@ -20,6 +20,10 @@ const BOSS_VILLAGER_SPEED = 5.0
 const BOSS_VILLAGER_AGGRO_RANGE = 36.0
 const BOSS_VILLAGER_SPACING = 2.3
 const BOSS_VILLAGER_SPACING_SQUARED = BOSS_VILLAGER_SPACING * BOSS_VILLAGER_SPACING
+const ENEMY_EMERGE_RANGE = 24.0
+const ENEMY_EMERGE_DEPTH = 1.9
+const ENEMY_EMERGE_DURATION = 1.15
+const RESCUED_WALK_SPEED = 2.6
 const PORTAL_TRIGGER_RANGE = 1.0
 const STAGE_SPAWN = Vector3(0.0, 0.2, 15.0)
 const RESPAWNS_PER_STAGE = 2
@@ -47,6 +51,8 @@ const VICTORY_SCREEN = preload("res://VictoryScreen.gd")
 
 var rng = RandomNumberGenerator.new()
 var material_cache = {}
+var emergence_ring_mesh: TorusMesh
+var emergence_ring_material: StandardMaterial3D
 var player: CharacterBody3D
 var avatar: Node3D
 var camera: Camera3D
@@ -594,11 +600,12 @@ func _add_villager(place: Vector3, villager_name: String, boss: bool, encounter_
 	var scenes = [preload("res://models/npcs/Farmer.tscn"),preload("res://models/npcs/Vendor.tscn"),preload("res://models/npcs/Elder.tscn"),preload("res://models/npcs/YoungWoman.tscn"),preload("res://models/npcs/Grandmother.tscn")]
 	var root = scenes[4 if boss else enemies.size() % 4].instantiate()
 	root.name = villager_name
-	root.position = place
+	root.position = place if boss else place - Vector3(0.0, ENEMY_EMERGE_DEPTH, 0.0)
+	root.visible = boss
 	add_child(root)
 	var target_area = Area3D.new()
 	target_area.name = "SpiritTarget"
-	target_area.collision_layer = 1
+	target_area.collision_layer = 1 if boss else 0
 	target_area.collision_mask = 0
 	var target_collision = CollisionShape3D.new()
 	var target_shape = CapsuleShape3D.new()
@@ -611,7 +618,7 @@ func _add_villager(place: Vector3, villager_name: String, boss: bool, encounter_
 	target_area.set_meta("enemy_id", enemies.size())
 	var head_area = Area3D.new()
 	head_area.name = "HeadshotTarget"
-	head_area.collision_layer = 1
+	head_area.collision_layer = 1 if boss else 0
 	head_area.collision_mask = 0
 	head_area.set_meta("enemy_id", enemies.size())
 	head_area.set_meta("headshot", true)
@@ -626,7 +633,10 @@ func _add_villager(place: Vector3, villager_name: String, boss: bool, encounter_
 	if encounter_stage == 4 and not boss:
 		movement_speed = BOSS_VILLAGER_SPEED
 	root.call("set_health",maximum,maximum)
-	enemies.append({"node":root,"area":target_area,"head_area":head_area,"name":villager_name,"boss":boss,"hp":maximum,"max_hp":maximum,"alive":true,"aggroed":false,"speed":movement_speed,"stage":encounter_stage,"next_attack":0.0,"attack_remaining":0.0,"attack_landed":false})
+	root.call("set_daylight_visibility", encounter_stage)
+	if not boss:
+		root.set_process(false)
+	enemies.append({"node":root,"area":target_area,"head_area":head_area,"name":villager_name,"boss":boss,"hp":maximum,"max_hp":maximum,"alive":true,"aggroed":false,"speed":movement_speed,"stage":encounter_stage,"next_attack":0.0,"attack_remaining":0.0,"attack_landed":false,"ground_position":place,"emergence":1.0 if boss else -1.0,"emerge_ring":null,"retreated":false,"retreat_delay":0.0,"retreat_phase":0})
 
 
 func _make_ui() -> void:
@@ -1178,7 +1188,7 @@ func _update_enemies(delta: float) -> void:
 	var boss_neighbor_grid := {}
 	if stage == 4:
 		for other in enemies:
-			if not other["alive"] or other["boss"] or other["stage"] != 4:
+			if not other["alive"] or other["boss"] or other["stage"] != 4 or other["emergence"] < 1.0:
 				continue
 			var other_node: Node3D = other["node"]
 			var other_position := other_node.global_position
@@ -1190,9 +1200,12 @@ func _update_enemies(delta: float) -> void:
 		if enemy["stage"] > stage:
 			continue
 		var enemy_node: Node3D = enemy["node"]
+		if enemy["alive"] and enemy["emergence"] < 1.0:
+			_update_enemy_emergence(enemy, delta)
+			continue
 		enemy_node.call("set_special_health_reveal", reveal_health and enemy["alive"] and enemy["stage"] == stage)
 		if not enemy["alive"]:
-			enemy_node.call("set_nearby", player.global_position.distance_to(enemy_node.global_position) < 24.0)
+			_update_rescued_villager(enemy, delta)
 			continue
 		var displacement = player.global_position - enemy_node.global_position
 		displacement.y = 0.0
@@ -1249,6 +1262,82 @@ func _update_enemies(delta: float) -> void:
 					movement_direction = (movement_direction + separation * 1.5).normalized()
 			enemy_node.global_position += movement_direction * minf(float(enemy["speed"]) * delta, distance - 1.45)
 			enemy_node.rotation.y = atan2(-displacement.x, -displacement.z)
+
+
+func _update_enemy_emergence(enemy: Dictionary, delta: float) -> void:
+	var enemy_node: Node3D = enemy["node"]
+	var ground: Vector3 = enemy["ground_position"]
+	if enemy["emergence"] < 0.0:
+		var offset := player.global_position - ground
+		offset.y = 0.0
+		if offset.length_squared() > ENEMY_EMERGE_RANGE * ENEMY_EMERGE_RANGE:
+			return
+		enemy["emergence"] = 0.0
+		enemy["aggroed"] = true
+		enemy_node.visible = true
+		enemy_node.set_process(true)
+		enemy_node.rotation.y = atan2(-offset.x, -offset.z)
+		enemy["emerge_ring"] = _make_emergence_ring(ground)
+	var progress := minf(float(enemy["emergence"]) + delta / ENEMY_EMERGE_DURATION, 1.0)
+	enemy["emergence"] = progress
+	var rise := smoothstep(0.0, 1.0, progress)
+	enemy_node.global_position = ground - Vector3(0.0, ENEMY_EMERGE_DEPTH * (1.0 - rise), 0.0)
+	if is_instance_valid(enemy["emerge_ring"]):
+		enemy["emerge_ring"].scale = Vector3.ONE * (0.5 + progress * 1.55)
+	if progress >= 0.7:
+		enemy["area"].collision_layer = 1
+		enemy["head_area"].collision_layer = 1
+	if progress >= 1.0:
+		if is_instance_valid(enemy["emerge_ring"]):
+			enemy["emerge_ring"].queue_free()
+			enemy["emerge_ring"] = null
+		enemy_node.call("set_nearby", true)
+
+
+func _make_emergence_ring(ground: Vector3) -> MeshInstance3D:
+	var ring := MeshInstance3D.new()
+	ring.name = "EmergingEarth"
+	if emergence_ring_mesh == null:
+		emergence_ring_mesh = TorusMesh.new()
+		emergence_ring_mesh.inner_radius = 0.42
+		emergence_ring_mesh.outer_radius = 0.5
+		emergence_ring_mesh.rings = 18
+		emergence_ring_mesh.ring_segments = 4
+		emergence_ring_material = StandardMaterial3D.new()
+		emergence_ring_material.albedo_color = Color(0.36, 0.21, 0.10, 0.72)
+		emergence_ring_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		emergence_ring_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ring.mesh = emergence_ring_mesh
+	ring.material_override = emergence_ring_material
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	current_map.add_child(ring)
+	ring.global_position = ground + Vector3(0.0, 0.035, 0.0)
+	return ring
+
+
+func _update_rescued_villager(enemy: Dictionary, delta: float) -> void:
+	if enemy["boss"] or enemy["retreated"]:
+		return
+	var enemy_node: Node3D = enemy["node"]
+	if enemy["retreat_delay"] > 0.0:
+		enemy["retreat_delay"] = maxf(float(enemy["retreat_delay"]) - delta, 0.0)
+		enemy_node.call("set_nearby", player.global_position.distance_squared_to(enemy_node.global_position) < 576.0)
+		return
+	var target: Vector3 = enemy["retreat_inside"] if enemy["retreat_phase"] == 1 else enemy["retreat_entry"]
+	var direction := target - enemy_node.global_position
+	if direction.length_squared() < 0.09:
+		if enemy["retreat_phase"] == 0:
+			enemy["retreat_phase"] = 1
+		else:
+			enemy["retreated"] = true
+			enemy_node.call("set_walking", false)
+			enemy_node.hide()
+			enemy_node.set_process(false)
+		return
+	var step := minf(RESCUED_WALK_SPEED * delta, direction.length())
+	enemy_node.global_position += direction.normalized() * step
+	enemy_node.rotation.y = atan2(-direction.x, -direction.z)
+	enemy_node.call("set_walking", true, RESCUED_WALK_SPEED)
 
 
 func _apply_player_damage(amount: int, notice: String) -> void:
@@ -1424,6 +1513,13 @@ func _hit_enemy(index: int, damage: int, award_charge: bool = true) -> void:
 
 func _exorcise(enemy: Dictionary, award_charge: bool) -> void:
 	enemy["alive"] = false
+	enemy["emergence"] = 1.0
+	if is_instance_valid(enemy["emerge_ring"]):
+		enemy["emerge_ring"].queue_free()
+		enemy["emerge_ring"] = null
+	var rescued_node: Node3D = enemy["node"]
+	if not enemy["boss"] and rescued_node.global_position.y < enemy["ground_position"].y:
+		rescued_node.global_position = enemy["ground_position"]
 	game_audio.call("play_spirit", enemy["node"].global_position)
 	enemy["node"].call("release_spirit")
 	enemy["area"].collision_layer = 0
@@ -1434,6 +1530,10 @@ func _exorcise(enemy: Dictionary, award_charge: bool) -> void:
 		boss_shield.visible = false
 		_show_message("ผีทะนงทวยออกจากร่างยายจ่อยแล้ว", 2.3)
 	else:
+		var shelter_entry: Vector3 = _nearest_shelter_entry(enemy["node"].global_position)
+		enemy["retreat_entry"] = current_map.to_global(shelter_entry)
+		enemy["retreat_inside"] = current_map.to_global(shelter_entry + Vector3(0.0, 0.85 if stage == 1 else 0.0, 0.9))
+		enemy["retreat_delay"] = 0.75
 		rescued_stage += 1
 		rescued_total += 1
 		if stage == 4 and rescued_stage >= MAP_VILLAGER_COUNTS[3] and not special_unlimited:
@@ -1449,6 +1549,28 @@ func _exorcise(enemy: Dictionary, award_charge: bool) -> void:
 		elif not special_unlimited:
 			_show_message("ปลดปล่อย %s จากวิญญาณแล้ว" % enemy["name"], 2.2)
 	_check_stage_clear()
+
+
+func _nearest_shelter_entry(from_position: Vector3) -> Vector3:
+	var entries: Array[Vector3] = MAP_LAYOUT.shelter_entries(stage)
+	var best_entry := entries[0]
+	var best_score := INF
+	var found_clear_path := false
+	for local_entry in entries:
+		var world_entry: Vector3 = current_map.to_global(local_entry)
+		var ray := PhysicsRayQueryParameters3D.create(from_position + Vector3.UP, world_entry + Vector3.UP, 1, [player.get_rid()])
+		ray.collide_with_areas = false
+		var blocked := not get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
+		if blocked and found_clear_path:
+			continue
+		if not blocked and not found_clear_path:
+			found_clear_path = true
+			best_score = INF
+		var score := from_position.distance_squared_to(world_entry)
+		if score < best_score:
+			best_score = score
+			best_entry = local_entry
+	return best_entry
 
 
 func _check_stage_clear() -> void:
@@ -1771,10 +1893,22 @@ func _handle_player_death() -> void:
 	health = MAX_HP
 	respawn_protection = RESPAWN_PROTECTION
 	for enemy in enemies:
+		if not enemy["alive"]:
+			continue
 		enemy["attack_remaining"] = 0.0
 		enemy["attack_landed"] = false
 		enemy["aggroed"] = false
 		enemy["node"].call("set_walking", false)
+		if not enemy["boss"]:
+			if is_instance_valid(enemy["emerge_ring"]):
+				enemy["emerge_ring"].queue_free()
+				enemy["emerge_ring"] = null
+			enemy["emergence"] = -1.0
+			enemy["node"].global_position = enemy["ground_position"] - Vector3(0.0, ENEMY_EMERGE_DEPTH, 0.0)
+			enemy["node"].hide()
+			enemy["node"].set_process(false)
+			enemy["area"].collision_layer = 0
+			enemy["head_area"].collision_layer = 0
 	_show_message("กลับมาที่จุดเซฟ • เหลือโอกาส %d/%d" % [respawns_left, RESPAWNS_PER_STAGE], 3.0)
 
 

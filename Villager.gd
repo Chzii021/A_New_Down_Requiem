@@ -16,6 +16,9 @@ var npc_legs = []
 var npc_arms = []
 var wisps = []
 var flash_materials = []
+var spirit_aura_material: StandardMaterial3D
+var daylight_spirit = false
+var last_emission_energy = -1.0
 var hp_text: Label3D
 var health_anchor: Node3D
 var health_fill: MeshInstance3D
@@ -36,6 +39,8 @@ func _ready() -> void:
 		if mesh.material_override is StandardMaterial3D and not mesh.material_override.emission_enabled:
 			if not flash_materials.has(mesh.material_override):
 				flash_materials.append(mesh.material_override)
+	for material in flash_materials:
+		material.emission = Color(.20, .80, .67)
 	health_anchor=_node(self,"NPCHealthBar")
 	health_anchor.position=Vector3(0,2.22,0)
 	_health_quad("Background",Vector2(.82,.086),Color("142024"),0)
@@ -256,12 +261,12 @@ func _build_npc() -> void:
 		_pattern(npc_body,Vector3(.285,-.32,-.071),.17,.15,"b19056")
 	glow_eyes = _node(npc_head,"PossessedEyes")
 	for side in [-1.0,1.0]:
-		var eye=_ellipsoid(glow_eyes,"SpiritGlow",Vector3(side*.065,.034,-.164),Vector3(.024,.024,.01),"a4fff1")
+		var eye=_ellipsoid(glow_eyes,"SpiritGlow",Vector3(side*.065,.034,-.164),Vector3(.031,.029,.012),"a4fff1")
 		var m=_mat("a4fff1")
 		m.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.emission_enabled=true
 		m.emission=Color("65f4df")
-		m.emission_energy_multiplier=2
+		m.emission_energy_multiplier=3.5
 		eye.material_override=m
 	aura=_node(self,"SpiritWisps")
 	var glow=StandardMaterial3D.new()
@@ -269,6 +274,7 @@ func _build_npc() -> void:
 	glow.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA
 	glow.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
 	glow.cull_mode=BaseMaterial3D.CULL_DISABLED
+	spirit_aura_material = glow
 	for i in range(6):
 		var st=SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -317,10 +323,28 @@ func _basket(parent: Node3D, pos: Vector3, radius: float, height: float) -> Node
 	return basket
 
 func set_walking(value: bool, movement_speed: float = 2.7) -> void:
-	walking=value and possessed
+	walking=value
 	if walking:
-		walk_phase_rate=8.8*movement_speed/5.2
+		walk_phase_rate=8.8*maxf(movement_speed, .1)/5.2
 		set_process(true)
+
+
+func set_daylight_visibility(encounter_stage: int) -> void:
+	daylight_spirit = encounter_stage <= 2
+	if spirit_aura_material != null:
+		spirit_aura_material.albedo_color = Color(.55, 1.0, .83, .44) if daylight_spirit else Color(.63, .82, .77, .18)
+	_update_body_emission(true)
+
+
+func _update_body_emission(force: bool = false) -> void:
+	var energy: float = (0.30 if daylight_spirit and possessed else 0.0) + hit_reaction * .65
+	if not force and absf(energy - last_emission_energy) < .015 and (energy > 0.0 or last_emission_energy == 0.0):
+		return
+	last_emission_energy = energy
+	for material in flash_materials:
+		if material.emission_enabled != (energy > 0.0):
+			material.emission_enabled = energy > 0.0
+		material.emission_energy_multiplier = energy
 
 func start_attack() -> void:
 	if not possessed:
@@ -352,13 +376,17 @@ func release_spirit() -> void:
 	possessed=false
 	walking=false
 	attack_time=0.0
+	hit_reaction=0.0
 	glow_eyes.hide()
 	aura.hide()
+	_update_body_emission(true)
 	set_health(0,health_maximum)
 	hp_time=1.2
 	var release=preload("res://SpiritRelease.gd").new()
-	add_child(release)
-	release.position=Vector3(0,1.2,0)
+	release.name = "ReleasedSpirit"
+	release.daylight_visibility = daylight_spirit
+	get_parent().add_child(release)
+	release.global_transform=global_transform * Transform3D(Basis.IDENTITY, Vector3(0,1.2,0))
 	if variant==4:
 		release.scale=Vector3.ONE*1.4
 
@@ -413,10 +441,7 @@ func _process(delta: float) -> void:
 				arm.node.rotation.z = -.16 * sin(attack_progress * PI)
 			else:
 				arm.node.rotation.x += .26 * sin(attack_progress * PI)
-	for m in flash_materials:
-		m.emission_enabled=hit_reaction>.01
-		m.emission=Color(.2,.8,.67)
-		m.emission_energy_multiplier=hit_reaction*.65
+	_update_body_emission()
 	for i in range(wisps.size()):
 		var t=fmod(age*.18+i/6.0,1.0)
 		var a=age*.8+i*2.4

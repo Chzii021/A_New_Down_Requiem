@@ -1,12 +1,14 @@
 extends "res://VikramRig.gd"
 
 const DURATION = 2.5
+var daylight_visibility = false
 var ghost: Node3D
 var ring: MeshInstance3D
 var particles = []
 var spirit_arms = []
 var fade_materials = []
 var release_light: OmniLight3D
+var light_energy_base = .10
 
 func _spirit_material(tint: Color) -> StandardMaterial3D:
 	var material=StandardMaterial3D.new()
@@ -23,10 +25,10 @@ func _ghost_part(node: MeshInstance3D, material: Material) -> MeshInstance3D:
 	return node
 
 func _ready() -> void:
-	var mist=_spirit_material(Color(.69,.84,.96,.31))
-	var features=_spirit_material(Color(.27,.46,.62,.48))
-	var mouth=_spirit_material(Color(.36,.55,.70,.28))
-	var wisps=_spirit_material(Color(.73,.86,.96,.15))
+	var mist=_spirit_material(Color(.40,.87,1.0,.75) if daylight_visibility else Color(.69,.84,.96,.31))
+	var features=_spirit_material(Color(.08,.23,.38,.92) if daylight_visibility else Color(.27,.46,.62,.48))
+	var mouth=_spirit_material(Color(.14,.37,.52,.74) if daylight_visibility else Color(.36,.55,.70,.28))
+	var wisps=_spirit_material(Color(.28,.91,1.0,.48) if daylight_visibility else Color(.73,.86,.96,.15))
 	ghost=_node(self,"PaleBlueSpirit")
 	# A single translucent silhouette avoids opaque seams between head and body.
 	var silhouette=_rings_mesh([
@@ -55,7 +57,8 @@ func _ready() -> void:
 	release_light=OmniLight3D.new()
 	release_light.light_color=Color("b6d9f5")
 	release_light.omni_range=2.0
-	release_light.light_energy=.10
+	light_energy_base = .35 if daylight_visibility else .10
+	release_light.light_energy=light_energy_base
 	add_child(release_light)
 
 func _process(delta: float) -> void:
@@ -70,7 +73,7 @@ func _process(delta: float) -> void:
 	for i in range(spirit_arms.size()):
 		spirit_arms[i].rotation.x=sin(age*2.0+i)*.08
 	ring.scale=Vector3.ONE*(.6+t*2.5)
-	release_light.light_energy=.10*fade
+	release_light.light_energy=light_energy_base*fade
 	for i in range(particles.size()):
 		var a=i*2.399+age*.7
 		var height=fmod(i*.173+t*1.9,2.1)

@@ -43,6 +43,33 @@ static func road_distance(point: Vector2, map_id: int) -> float:
 	return nearest
 
 
+static func shelter_entries(map_id: int) -> Array[Vector3]:
+	# Building fronts face -Z. These ground-level points stay outside their box colliders.
+	var entries: Array[Vector3] = []
+	match map_id:
+		1:
+			# Raised houses: stop just beyond the last stair at local z=-3.05.
+			for center in [Vector3(-9, 0, 8), Vector3(9, 0, 3), Vector3(-9, 0, -18), Vector3(-32, 0, -28), Vector3(32, 0, -29)]:
+				entries.append(center + Vector3(0, 0, -3.6))
+		2:
+			# Open market stalls and granaries serve as nearby shelters.
+			for center in [Vector3(-8, 0, 7), Vector3(8, 0, 2), Vector3(-8, 0, -12), Vector3(8, 0, -19), Vector3(-39, 0, -30), Vector3(39, 0, -32), Vector3(-28, 0, -62), Vector3(28, 0, -62)]:
+				entries.append(center + Vector3(0, 0, -1.7))
+			for center in [Vector3(10, 0, -27), Vector3(-9, 0, -76)]:
+				entries.append(center + Vector3(0, 0, -2.0))
+		3:
+			# Open pavilions and granaries flank the paths through the fields.
+			for center in [Vector3(-9, 0, 2), Vector3(-49, 0, -43), Vector3(49, 0, -42)]:
+				entries.append(center + Vector3(0, 0, -3.0))
+			for center in [Vector3(-10, 0, -22), Vector3(-31, 0, -88), Vector3(31, 0, -88)]:
+				entries.append(center + Vector3(0, 0, -2.0))
+		4:
+			# Watchtowers provide closer exits than the hall for most villagers.
+			for center in [Vector3(-10, 0, -16), Vector3(10, 0, -16), Vector3(-56, 0, -62), Vector3(56, 0, -62)]:
+				entries.append(center + Vector3(0, 0, -2.2))
+	return entries
+
+
 static func villager_positions(map_id: int, amount: int) -> Array[Vector3]:
 	var result: Array[Vector3] = []
 	var rng = RandomNumberGenerator.new()
