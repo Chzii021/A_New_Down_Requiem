@@ -166,6 +166,7 @@ var victory_pending = false
 
 func _ready() -> void:
 	rng.seed = 2047
+	_register_move_keys()
 	if OS.has_feature("web"):
 		_configure_web_rendering()
 	_make_world()
@@ -185,7 +186,9 @@ func _ready() -> void:
 	sound_settings.call("set_levels", game_audio.call("get_volume_levels"))
 	sound_settings.call("set_sensitivity", game_audio.call("get_look_sensitivity"))
 	_update_camera(0.0)
-	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	# Browsers may reject pointer lock during an automatic scene transition.
+	# The next click in the game will capture the mouse when the browser permits it.
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if OS.has_feature("web") else Input.MOUSE_MODE_CAPTURED)
 	if stage == 1:
 		_start_story_intro()
 	else:
@@ -885,24 +888,46 @@ func _return_to_start_menu() -> void:
 
 
 func _start_dash() -> void:
-	if transition_pending or special_preparing or special_lunging or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or dash_cooldown > 0.0 or dash_remaining > 0.0:
+	if transition_pending or special_preparing or special_lunging or worship_remaining > 0.0 or dash_cooldown > 0.0 or dash_remaining > 0.0:
 		return
 	var forward = Vector3(-sin(yaw), 0.0, -cos(yaw))
 	var right = Vector3(cos(yaw), 0.0, -sin(yaw))
 	dash_direction = Vector3.ZERO
-	if Input.is_key_pressed(KEY_W):
+	if _move_key_down(KEY_W):
 		dash_direction += forward
-	if Input.is_key_pressed(KEY_S):
+	if _move_key_down(KEY_S):
 		dash_direction -= forward
-	if Input.is_key_pressed(KEY_A):
+	if _move_key_down(KEY_A):
 		dash_direction -= right
-	if Input.is_key_pressed(KEY_D):
+	if _move_key_down(KEY_D):
 		dash_direction += right
 	if dash_direction.is_zero_approx():
 		dash_direction = forward
 	dash_direction = dash_direction.normalized()
 	dash_remaining = DASH_DURATION
 	dash_cooldown = DASH_COOLDOWN
+
+
+func _register_move_keys() -> void:
+	var keys := {"game_move_forward": KEY_W, "game_move_back": KEY_S, "game_move_left": KEY_A, "game_move_right": KEY_D}
+	for action in keys:
+		if InputMap.has_action(action):
+			continue
+		InputMap.add_action(action)
+		var event := InputEventKey.new()
+		event.physical_keycode = keys[action]
+		InputMap.action_add_event(action, event)
+
+
+func _move_key_down(keycode: Key) -> bool:
+	# Physical keys keep WASD usable when the system keyboard layout is Thai.
+	var action := ""
+	match keycode:
+		KEY_W: action = "game_move_forward"
+		KEY_S: action = "game_move_back"
+		KEY_A: action = "game_move_left"
+		KEY_D: action = "game_move_right"
+	return (not action.is_empty() and Input.is_action_pressed(action)) or Input.is_key_pressed(keycode)
 
 
 func _toggle_special() -> void:
@@ -1081,7 +1106,8 @@ func _physics_process(delta: float) -> void:
 	damage_shake = maxf(damage_shake - delta * 2.6, 0.0)
 	if special_preparing and not finished and not transition_pending:
 		_update_khene_preparation(delta)
-	var controls_active = not finished and not transition_pending and not special_preparing and worship_remaining <= 0.0 and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	var controls_active = not finished and not transition_pending and not special_preparing and worship_remaining <= 0.0
+	var mouse_active = controls_active and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	dash_cooldown = maxf(dash_cooldown - delta, 0.0)
 	special_cooldown_remaining = maxf(special_cooldown_remaining - delta, 0.0)
 	if special_active and not special_unlimited and not finished and not transition_pending:
@@ -1091,21 +1117,21 @@ func _physics_process(delta: float) -> void:
 			_show_message("พลังเคียวหมดเวลา", 1.5)
 	if not finished:
 		_update_reload(delta)
-	aiming = controls_active and reload_remaining <= 0.0 and dash_remaining <= 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	aiming = mouse_active and reload_remaining <= 0.0 and dash_remaining <= 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 	if not finished:
 		var forward = Vector3(-sin(yaw), 0.0, -cos(yaw))
 		var right = Vector3(cos(yaw), 0.0, -sin(yaw))
 		var move_dir = Vector3.ZERO
-		if controls_active and Input.is_key_pressed(KEY_W):
+		if controls_active and _move_key_down(KEY_W):
 			move_dir += forward
-		if controls_active and Input.is_key_pressed(KEY_S):
+		if controls_active and _move_key_down(KEY_S):
 			move_dir -= forward
-		if controls_active and Input.is_key_pressed(KEY_A):
+		if controls_active and _move_key_down(KEY_A):
 			move_dir -= right
-		if controls_active and Input.is_key_pressed(KEY_D):
+		if controls_active and _move_key_down(KEY_D):
 			move_dir += right
 		move_dir = move_dir.normalized()
-		var speed = 2.8 if aiming else (RUN_SPEED if controls_active and Input.is_key_pressed(KEY_SHIFT) else WALK_SPEED)
+		var speed = 2.8 if aiming else (RUN_SPEED if controls_active and _move_key_down(KEY_SHIFT) else WALK_SPEED)
 		var dashing = dash_remaining > 0.0 and controls_active
 		var lunging_now = special_lunging
 		if lunging_now and special_lunge_target >= 0:
@@ -1134,7 +1160,7 @@ func _physics_process(delta: float) -> void:
 		if not lunging_now:
 			if player.is_on_floor():
 				player.velocity.y = 0.0
-				if controls_active and Input.is_key_pressed(KEY_SPACE):
+				if controls_active and _move_key_down(KEY_SPACE):
 					player.velocity.y = sqrt(2.0 * GRAVITY * SPECIAL_JUMP_HEIGHT) if special_active else 6.2
 					special_jump_grace = .35 if special_active else 0.0
 			elif special_active and aiming and special_jump_grace <= 0.0 and player.velocity.y <= 0.0:
@@ -1185,7 +1211,7 @@ func _physics_process(delta: float) -> void:
 			hud.target_label.text = target_enemy.name
 			target_enemy.node.call("focus_health")
 		crosshair.set_state(aiming,Vector2(player.velocity.x,player.velocity.z).length(),_is_enemy_hit(solution.hit),solution.blocked)
-		if controls_active and (shot_requested or (assembled and full_auto and trigger_held)):
+		if mouse_active and (shot_requested or (assembled and full_auto and trigger_held)):
 			_shoot()
 	shot_requested = false
 	crosshair.visible = not finished and not transition_pending and not special_preparing and has_pistol and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
@@ -2133,6 +2159,8 @@ func _update_ui() -> void:
 	prompt_label.text = ""
 	if transition_pending:
 		return
+	if OS.has_feature("web") and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		prompt_label.text = "คลิกในเกมเพื่อหมุนกล้อง • WASD เดิน"
 	if portal_open and is_instance_valid(portal_node):
 		var portal_offset = player.global_position - portal_node.global_position
 		portal_offset.y = 0.0
