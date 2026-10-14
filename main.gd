@@ -19,6 +19,7 @@ const VILLAGER_AGGRO_RANGE = 30.0
 const BOSS_VILLAGER_SPEED = 5.0
 const BOSS_VILLAGER_AGGRO_RANGE = 36.0
 const BOSS_VILLAGER_SPACING = 2.3
+const BOSS_VILLAGER_SPACING_SQUARED = BOSS_VILLAGER_SPACING * BOSS_VILLAGER_SPACING
 const PORTAL_TRIGGER_RANGE = 1.0
 const STAGE_SPAWN = Vector3(0.0, 0.2, 15.0)
 const RESPAWNS_PER_STAGE = 2
@@ -1174,6 +1175,17 @@ func _update_enemies(delta: float) -> void:
 		return
 	var now = float(Time.get_ticks_msec()) / 1000.0
 	var reveal_health = special_active and not player.is_on_floor()
+	var boss_neighbor_grid := {}
+	if stage == 4:
+		for other in enemies:
+			if not other["alive"] or other["boss"] or other["stage"] != 4:
+				continue
+			var other_node: Node3D = other["node"]
+			var other_position := other_node.global_position
+			var cell := Vector2i(floori(other_position.x / BOSS_VILLAGER_SPACING), floori(other_position.z / BOSS_VILLAGER_SPACING))
+			if not boss_neighbor_grid.has(cell):
+				boss_neighbor_grid[cell] = []
+			boss_neighbor_grid[cell].append(other_node)
 	for enemy in enemies:
 		if enemy["stage"] > stage:
 			continue
@@ -1220,14 +1232,19 @@ func _update_enemies(delta: float) -> void:
 			var movement_direction := displacement.normalized()
 			if enemy["stage"] == 4:
 				var separation := Vector3.ZERO
-				for other in enemies:
-					if other["node"] == enemy_node or not other["alive"] or other["boss"] or other["stage"] != stage:
-						continue
-					var offset: Vector3 = enemy_node.global_position - other["node"].global_position
-					offset.y = 0.0
-					var gap := offset.length()
-					if gap > 0.001 and gap < BOSS_VILLAGER_SPACING:
-						separation += offset / gap * (1.0 - gap / BOSS_VILLAGER_SPACING)
+				var position := enemy_node.global_position
+				var cell := Vector2i(floori(position.x / BOSS_VILLAGER_SPACING), floori(position.z / BOSS_VILLAGER_SPACING))
+				for cell_x in range(cell.x - 1, cell.x + 2):
+					for cell_y in range(cell.y - 1, cell.y + 2):
+						for other_node in boss_neighbor_grid.get(Vector2i(cell_x, cell_y), []):
+							if other_node == enemy_node:
+								continue
+							var offset: Vector3 = position - other_node.global_position
+							offset.y = 0.0
+							var gap_squared := offset.length_squared()
+							if gap_squared > 0.000001 and gap_squared < BOSS_VILLAGER_SPACING_SQUARED:
+								var gap := sqrt(gap_squared)
+								separation += offset / gap * (1.0 - gap / BOSS_VILLAGER_SPACING)
 				if separation.length_squared() > 0.0001:
 					movement_direction = (movement_direction + separation * 1.5).normalized()
 			enemy_node.global_position += movement_direction * minf(float(enemy["speed"]) * delta, distance - 1.45)
@@ -1246,8 +1263,8 @@ func _apply_player_damage(amount: int, notice: String) -> void:
 func _spawn_boss_spirit(origin: Vector3, offset: float) -> void:
 	var spirit = Node3D.new()
 	spirit.name = "GrandmotherSpiritAttack"
-	spirit.global_position = origin + Vector3(offset, 1.65, 0.0)
 	add_child(spirit)
+	spirit.global_position = origin + Vector3(offset, 1.65, 0.0)
 	_sphere(spirit, Vector3.ZERO, Vector3(.44, .56, .30), Color(.62, .84, .98, .50), true)
 	_sphere(spirit, Vector3(0.0, -.25, .07), Vector3(.28, .37, .22), Color(.72, .91, 1.0, .22), true)
 	_sphere(spirit, Vector3(-.15, .10, -.26), Vector3(.055, .08, .025), Color(.22, .42, .58, .75), true)

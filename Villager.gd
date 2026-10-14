@@ -31,6 +31,7 @@ var phase = 0.0
 func _ready() -> void:
 	phase = variant*1.73
 	_build_npc()
+	_merge_npc_meshes()
 	for mesh in find_children("*","MeshInstance3D",true,false):
 		if mesh.material_override is StandardMaterial3D and not mesh.material_override.emission_enabled:
 			if not flash_materials.has(mesh.material_override):
@@ -50,6 +51,58 @@ func _ready() -> void:
 	hp_text.font = font
 	health_anchor.add_child(hp_text)
 	set_health(30 if variant==4 else 5,30 if variant==4 else 5)
+
+
+# Bake static decorations into one mesh per material for each animated body part.
+# The body, head, arms and legs still animate independently.
+func _merge_npc_meshes() -> void:
+	_merge_part(npc_body, [npc_head, npc_arms[0].node, npc_arms[1].node])
+	_merge_part(npc_head, [glow_eyes])
+	for arm in npc_arms:
+		_merge_part(arm.node, [])
+	for leg in npc_legs:
+		_merge_part(leg.node, [leg.knee])
+		_merge_part(leg.knee, [])
+
+
+func _merge_part(part: Node3D, excluded: Array) -> void:
+	var source_meshes: Array[MeshInstance3D] = []
+	_collect_static_meshes(part, excluded, source_meshes)
+	var surfaces := {}
+	var materials_by_id := {}
+	var part_inverse := part.global_transform.affine_inverse()
+	for source in source_meshes:
+		var material: Material = source.material_override
+		if material == null or source.mesh == null:
+			continue
+		var material_id := material.get_instance_id()
+		if not surfaces.has(material_id):
+			var surface := SurfaceTool.new()
+			surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+			surfaces[material_id] = surface
+			materials_by_id[material_id] = material
+		var target: SurfaceTool = surfaces[material_id]
+		var transform_to_part := part_inverse * source.global_transform
+		for surface_index in range(source.mesh.get_surface_count()):
+			target.append_from(source.mesh, surface_index, transform_to_part)
+	for material_id in surfaces:
+		var baked := MeshInstance3D.new()
+		baked.name = "BakedDetail"
+		baked.mesh = surfaces[material_id].commit()
+		baked.material_override = materials_by_id[material_id]
+		part.add_child(baked)
+	for source in source_meshes:
+		if is_instance_valid(source):
+			source.free()
+
+
+func _collect_static_meshes(node: Node, excluded: Array, output: Array[MeshInstance3D]) -> void:
+	for child in node.get_children():
+		if excluded.has(child):
+			continue
+		if child is MeshInstance3D:
+			output.append(child)
+		_collect_static_meshes(child, excluded, output)
 
 func _health_quad(label: String, dimensions: Vector2, tint: Color, z: float) -> MeshInstance3D:
 	var quad=QuadMesh.new()
