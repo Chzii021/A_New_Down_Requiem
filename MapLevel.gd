@@ -16,6 +16,7 @@ var materials = {}
 func _ready() -> void:
 	if baked_scene:
 		_bind_baked_scene()
+		_add_retreat_houses()
 		return
 	var landscape = preload("res://Scenery.gd").new()
 	landscape.map_id = map_id
@@ -32,6 +33,7 @@ func _ready() -> void:
 			_build_night_courtyard()
 	for place in shrine_places:
 		_build_spirit_shrine(place)
+	_add_retreat_houses()
 	villager_places = MAP_LAYOUT.villager_positions(map_id, POPULATIONS[map_id - 1])
 
 
@@ -116,7 +118,7 @@ func _obstacle(parent: Node3D, place: Vector3, dimensions: Vector3) -> void:
 	body.add_child(collision)
 
 
-func _house(place: Vector3, wall: Color, roof: Color) -> void:
+func _house(place: Vector3, wall: Color, roof: Color) -> Node3D:
 	var house = _group(place, "บ้านไม้ยกพื้น")
 	_obstacle(house, Vector3(0, 1.8, 0), Vector3(3.8, 3.6, 3.5))
 	for x in [-1.65, 1.65]:
@@ -130,6 +132,46 @@ func _house(place: Vector3, wall: Color, roof: Color) -> void:
 		panel.rotation.z = .47 if x < 0 else -.47
 	for step in range(4):
 		_box(house, Vector3(0, 1.18 - step * .32, -2.0 - step * .35), Vector3(1.2, .1, .34), Color("846145"))
+	return house
+
+
+func _add_retreat_houses() -> void:
+	if map_id == 1:
+		return
+	var walls = [Color("987457"), Color("947056"), Color("866351"), Color("927968")]
+	var roofs = [Color("846044"), Color("8a624d"), Color("77504c"), Color("715b59")]
+	for index in range(MAP_LAYOUT.house_centers(map_id).size()):
+		var name := "RetreatHouse_%d" % index
+		if has_node(name):
+			continue
+		var house := _house(MAP_LAYOUT.house_centers(map_id)[index], walls[map_id - 1], roofs[map_id - 1])
+		house.name = name
+		if map_id == 4:
+			for side in [-1.18, 1.18]:
+				_box(house, Vector3(side, 2.5, -1.76), Vector3(.42, .46, .06), Color("f3bd71"), true)
+		_batch_house_meshes(house)
+
+
+func _batch_house_meshes(house: Node3D) -> void:
+	var surfaces := {}
+	var materials_by_id := {}
+	for child in house.get_children():
+		if not child is MeshInstance3D:
+			continue
+		var material: Material = child.material_override
+		var material_id := material.get_instance_id()
+		if not surfaces.has(material_id):
+			var surface := SurfaceTool.new()
+			surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+			surfaces[material_id] = surface
+			materials_by_id[material_id] = material
+		surfaces[material_id].append_from(child.mesh, 0, child.transform)
+		child.queue_free()
+	for material_id in surfaces:
+		var batched := MeshInstance3D.new()
+		batched.mesh = surfaces[material_id].commit()
+		batched.material_override = materials_by_id[material_id]
+		house.add_child(batched)
 
 
 func _granary(place: Vector3) -> void:

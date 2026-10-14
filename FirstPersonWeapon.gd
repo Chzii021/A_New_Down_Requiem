@@ -39,6 +39,7 @@ func _reload_body_socket() -> Vector3:
 func _process(delta: float) -> void:
 	age+=delta
 	lunge_weight=move_toward(lunge_weight,1.0 if lunge_pose_target else 0.0,delta*10.0)
+	worship_weight=move_toward(worship_weight,1.0 if worship_target else 0.0,delta*5.0)
 	if not visible:
 		muzzle.hide()
 		return
@@ -88,6 +89,9 @@ func _update_pose(_delta: float) -> void:
 			hand_basis = Basis.IDENTITY.slerp(Basis.from_euler(Vector3(-.30, -.10, .08)), lunge_weight)
 		elif sickle_equipped and side < 0.0:
 			palm = Vector3(-.40, -.66, -.38).lerp(Vector3(-.31, -.52, -.62), lunge_weight)
+		if worship_weight > .001:
+			palm = palm.lerp(Vector3(side * .055, -.20, -.59), worship_weight)
+			hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.18, side * .44, side * .10)), worship_weight)
 		var wrist=palm+hand_basis*Vector3(side*.035,-.030,.024)
 		var elbow=Vector3(.34,-.50,-.55) if side>0 else Vector3(-.10,-.50,-.62)
 		var shoulder=Vector3(.43,-.70,-.16) if side>0 else Vector3(-.31,-.69,-.16)

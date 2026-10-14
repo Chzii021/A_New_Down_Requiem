@@ -43,30 +43,25 @@ static func road_distance(point: Vector2, map_id: int) -> float:
 	return nearest
 
 
-static func shelter_entries(map_id: int) -> Array[Vector3]:
-	# Building fronts face -Z. These ground-level points stay outside their box colliders.
-	var entries: Array[Vector3] = []
+static func house_centers(map_id: int) -> Array[Vector3]:
+	# Homes stay beside the routes and clear of markets, shrines and the final hall.
 	match map_id:
 		1:
-			# Raised houses: stop just beyond the last stair at local z=-3.05.
-			for center in [Vector3(-9, 0, 8), Vector3(9, 0, 3), Vector3(-9, 0, -18), Vector3(-32, 0, -28), Vector3(32, 0, -29)]:
-				entries.append(center + Vector3(0, 0, -3.6))
+			return [Vector3(-9, 0, 8), Vector3(9, 0, 3), Vector3(-9, 0, -18), Vector3(-32, 0, -28), Vector3(32, 0, -29)]
 		2:
-			# Open market stalls and granaries serve as nearby shelters.
-			for center in [Vector3(-8, 0, 7), Vector3(8, 0, 2), Vector3(-8, 0, -12), Vector3(8, 0, -19), Vector3(-39, 0, -30), Vector3(39, 0, -32), Vector3(-28, 0, -62), Vector3(28, 0, -62)]:
-				entries.append(center + Vector3(0, 0, -1.7))
-			for center in [Vector3(10, 0, -27), Vector3(-9, 0, -76)]:
-				entries.append(center + Vector3(0, 0, -2.0))
+			return [Vector3(-19, 0, 12), Vector3(19, 0, 7), Vector3(-23, 0, -41), Vector3(24, 0, -45), Vector3(-20, 0, -79), Vector3(20, 0, -79)]
 		3:
-			# Open pavilions and granaries flank the paths through the fields.
-			for center in [Vector3(-9, 0, 2), Vector3(-49, 0, -43), Vector3(49, 0, -42)]:
-				entries.append(center + Vector3(0, 0, -3.0))
-			for center in [Vector3(-10, 0, -22), Vector3(-31, 0, -88), Vector3(31, 0, -88)]:
-				entries.append(center + Vector3(0, 0, -2.0))
+			return [Vector3(-31, 0, -5), Vector3(31, 0, -5), Vector3(-43, 0, -63), Vector3(43, 0, -63), Vector3(-44, 0, -91), Vector3(44, 0, -91)]
 		4:
-			# Watchtowers provide closer exits than the hall for most villagers.
-			for center in [Vector3(-10, 0, -16), Vector3(10, 0, -16), Vector3(-56, 0, -62), Vector3(56, 0, -62)]:
-				entries.append(center + Vector3(0, 0, -2.2))
+			return [Vector3(-24, 0, -5), Vector3(24, 0, -5), Vector3(-38, 0, -48), Vector3(38, 0, -48), Vector3(-36, 0, -83), Vector3(36, 0, -83)]
+	return []
+
+
+static func shelter_entries(map_id: int) -> Array[Vector3]:
+	# Every destination is the front stair of a real house in this level.
+	var entries: Array[Vector3] = []
+	for center in house_centers(map_id):
+		entries.append(center + Vector3(0, 0, -3.6))
 	return entries
 
 

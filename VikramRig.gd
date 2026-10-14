@@ -21,6 +21,9 @@ var khene_blowing := false
 var sickle_equipped := false
 var lunge_pose_target := false
 var lunge_weight := 0.0
+var worship_target := false
+var worship_weight := 0.0
+var weapon_visible_before_worship := false
 var pistol: Node3D
 var rifle: Node3D
 var pistol_magazine: Node3D
@@ -393,6 +396,15 @@ func set_sickle_equipped(equipped: bool) -> void:
 func set_lunge_pose(active: bool) -> void:
 	lunge_pose_target = active
 
+
+func set_worshipping(active: bool) -> void:
+	if active and not worship_target:
+		weapon_visible_before_worship = gun.visible
+		gun.hide()
+	elif not active and worship_target:
+		gun.visible = weapon_visible_before_worship
+	worship_target = active
+
 func set_move_direction(direction: Vector3) -> void:
 	if direction.length_squared()>.001:
 		move_direction=direction.normalized()
@@ -493,8 +505,11 @@ func get_weapon_origin() -> Vector3:
 	return gun.global_position
 
 func _process(delta: float) -> void:
+	if not visible:
+		return
 	age+=delta
 	lunge_weight = move_toward(lunge_weight, 1.0 if lunge_pose_target else 0.0, delta * 9.0)
+	worship_weight = move_toward(worship_weight, 1.0 if worship_target else 0.0, delta * 5.0)
 	smoothed_speed=lerpf(smoothed_speed,move_speed,1.0-exp(-delta*12.0))
 	var clip="Idle_Neutral"
 	if grounded and smoothed_speed>.22:
@@ -503,7 +518,7 @@ func _process(delta: float) -> void:
 			clip="Run_Back"
 		elif running and absf(move_direction.x)>.7:
 			clip="Run_Right" if move_direction.x>0 else "Run_Left"
-	if lunge_pose_target:
+	if lunge_pose_target or worship_target:
 		clip="Idle_Neutral"
 	_play(clip)
 	var cadence=clampf(smoothed_speed/(7.4 if running else 5.2),.65,1.2) if smoothed_speed>.22 else 1.0
@@ -528,6 +543,9 @@ func _update_pose(delta: float) -> void:
 		head.position += Vector3(0.0, -.045, -.15) * lunge_weight
 		head.rotation.x += .17 * lunge_weight
 		hips.rotation.x -= .13 * lunge_weight
+	if worship_weight > .001:
+		chest.rotation.x += .16 * worship_weight
+		head.rotation.x += .20 * worship_weight
 	if khene != null and khene_weight > .001:
 		var raised := smoothstep(0.0, 1.0, khene_weight)
 		var mouth_position := head.position + Vector3(.0, -.135, -.30)
@@ -591,6 +609,10 @@ func _update_pose(delta: float) -> void:
 			palm = palm.lerp(lunge_palm, lunge_weight)
 			if side > 0.0:
 				hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.32, -.12, -.12)), lunge_weight)
+		if worship_weight > .001:
+			var prayer_palm := chest.position + Vector3(side * .038, -.12, -.33)
+			palm = palm.lerp(prayer_palm, worship_weight)
+			hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.16, side * .42, side * .12)), worship_weight)
 		var wrist=palm+hand_basis*Vector3(side*.036,-.032,.025)
 		var upper_length=.255
 		var lower_length=.245

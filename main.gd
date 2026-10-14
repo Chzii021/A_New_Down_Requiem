@@ -5,10 +5,13 @@ const MEDICINE_HEAL = 50
 const MAX_MEDICINE = 5
 const VILLAGER_COUNT = 115
 const MAP_VILLAGER_COUNTS = [10, 30, 40, 35]
-const BOSS_ATTACK_DURATION = 10.0
-const BOSS_VULNERABLE_DURATION = 3.0
-const BOSS_SPIRIT_INTERVAL = 1.5
-const BOSS_SPIRIT_SPEED = 16.0
+const BOSS_ATTACK_DURATION = 8.0
+const BOSS_VULNERABLE_DURATION = 4.0
+const BOSS_SPIRIT_INTERVAL = 2.4
+const BOSS_SPIRIT_SPEED = 12.5
+const BOSS_PULSE_INTERVAL = 6.5
+const BOSS_PULSE_WARNING = 1.2
+const BOSS_PULSE_RADIUS = 3.2
 const BOSS_MAP_SCALE = 0.78
 const VILLAGER_HP = 5
 const BOSS_HP = 50
@@ -23,7 +26,9 @@ const BOSS_VILLAGER_SPACING_SQUARED = BOSS_VILLAGER_SPACING * BOSS_VILLAGER_SPAC
 const ENEMY_EMERGE_RANGE = 24.0
 const ENEMY_EMERGE_DEPTH = 1.9
 const ENEMY_EMERGE_DURATION = 1.15
+const MAX_ACTIVE_ENEMIES = 11
 const RESCUED_WALK_SPEED = 2.6
+const WORSHIP_DURATION = 1.35
 const PORTAL_TRIGGER_RANGE = 1.0
 const STAGE_SPAWN = Vector3(0.0, 0.2, 15.0)
 const RESPAWNS_PER_STAGE = 2
@@ -53,6 +58,10 @@ var rng = RandomNumberGenerator.new()
 var material_cache = {}
 var emergence_ring_mesh: TorusMesh
 var emergence_ring_material: StandardMaterial3D
+var buried_markers: MultiMeshInstance3D
+var buried_marker_material: StandardMaterial3D
+var web_lights: Array[OmniLight3D] = []
+var web_light_refresh = 0.0
 var player: CharacterBody3D
 var avatar: Node3D
 var camera: Camera3D
@@ -109,6 +118,8 @@ var enemies = []
 var current_map
 var shrines = []
 var worshipped_count = 0
+var worship_remaining = 0.0
+var worship_shrine_index = -1
 var rescued_stage = 0
 var rescued_total = 0
 var boss_enemy_index = -1
@@ -116,6 +127,15 @@ var boss_vulnerable = false
 var boss_phase_remaining = 0.0
 var boss_phase_label: Label3D
 var boss_shield: MeshInstance3D
+var boss_aura: MeshInstance3D
+var boss_move_time = 0.0
+var boss_pulse_cooldown = BOSS_PULSE_INTERVAL
+var boss_pulse_remaining = 0.0
+var boss_pulse_center = Vector3.ZERO
+var boss_pulse_marker: MeshInstance3D
+var boss_projectile_mesh: SphereMesh
+var boss_projectile_material: StandardMaterial3D
+var boss_projectile_eye_material: StandardMaterial3D
 var boss_spirit_cooldown = 2.4
 var boss_spirits = []
 var dash_remaining = 0.0
@@ -146,6 +166,8 @@ var victory_pending = false
 
 func _ready() -> void:
 	rng.seed = 2047
+	if OS.has_feature("web"):
+		_configure_web_rendering()
 	_make_world()
 	_make_player()
 	_prepare_stage_start()
@@ -168,6 +190,41 @@ func _ready() -> void:
 		_start_story_intro()
 	else:
 		_show_message("เข้าสู่แผนที่ %d • บันทึกจุดเกิดแล้ว • สำรวจศาลและช่วยชาวบ้าน" % stage, 7.0)
+
+
+func _configure_web_rendering() -> void:
+	# Scale only the 3D world; HUD text remains at the browser's full resolution.
+	get_viewport().scaling_3d_scale = 0.65
+	get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+
+
+func _prepare_web_lights() -> void:
+	if not OS.has_feature("web"):
+		return
+	web_lights.clear()
+	for light in current_map.find_children("*", "DirectionalLight3D", true, false):
+		light.shadow_enabled = false
+	for light in current_map.find_children("*", "OmniLight3D", true, false):
+		web_lights.append(light)
+		light.visible = false
+	web_light_refresh = 0.0
+
+
+func _update_web_lights(delta: float) -> void:
+	web_light_refresh -= delta
+	if web_light_refresh > 0.0:
+		return
+	web_light_refresh = 0.35
+	var ranked := []
+	for light in web_lights:
+		if is_instance_valid(light):
+			ranked.append({"node": light, "distance": light.global_position.distance_squared_to(player.global_position)})
+	ranked.sort_custom(func(a, b): return a["distance"] < b["distance"])
+	for index in range(ranked.size()):
+		var light: OmniLight3D = ranked[index]["node"]
+		var should_show: bool = index < 4 and ranked[index]["distance"] < 484.0
+		if light.visible != should_show:
+			light.visible = should_show
 
 
 func _start_story_intro() -> void:
@@ -287,11 +344,13 @@ func _load_map() -> void:
 	add_child(current_map)
 	if stage == 4:
 		current_map.scale = Vector3.ONE * BOSS_MAP_SCALE
+	current_map.get_node("Scenery").call("batch_trees")
 	shrines.clear()
 	worshipped_count = 0
 	for place in current_map.shrine_places:
 		shrines.append({"place": current_map.to_global(place), "worshipped": false})
 	_make_save_point()
+	_prepare_web_lights()
 
 
 func _make_save_point() -> void:
@@ -565,6 +624,9 @@ func _make_enemies() -> void:
 		boss_vulnerable = false
 		boss_phase_remaining = BOSS_ATTACK_DURATION
 		boss_spirit_cooldown = 1.4
+		boss_pulse_cooldown = BOSS_PULSE_INTERVAL
+		boss_pulse_remaining = 0.0
+		boss_move_time = 0.0
 		boss_enemy_index = enemies.size()
 		_add_villager(current_map.to_global(Vector3(0.0, 0.0, -96.0)), "ยายจ่อย", true, stage)
 		boss_phase_label = Label3D.new()
@@ -592,8 +654,72 @@ func _make_enemies() -> void:
 		shield_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 		boss_shield.material_override = shield_material
 		enemies[boss_enemy_index]["node"].add_child(boss_shield)
+		boss_aura = MeshInstance3D.new()
+		boss_aura.name = "GrandmotherSpiritAura"
+		var aura_mesh := TorusMesh.new()
+		aura_mesh.inner_radius = 1.28
+		aura_mesh.outer_radius = 1.38
+		aura_mesh.rings = 22
+		aura_mesh.ring_segments = 4
+		boss_aura.mesh = aura_mesh
+		boss_aura.position.y = .10
+		var aura_material := StandardMaterial3D.new()
+		aura_material.albedo_color = Color(.37, .84, 1.0, .72)
+		aura_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		aura_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		aura_material.emission_enabled = true
+		aura_material.emission = Color(.25, .69, 1.0)
+		aura_material.emission_energy_multiplier = .7
+		boss_aura.material_override = aura_material
+		boss_aura.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		enemies[boss_enemy_index]["node"].add_child(boss_aura)
 	for index in range(places.size()):
 		_add_villager(current_map.to_global(places[index]), "%s %d" % [names[(index + stage - 1) % names.size()], rescued_total + index + 1], false, stage)
+	_make_buried_markers()
+
+
+func _make_buried_markers() -> void:
+	var count := 0
+	for enemy in enemies:
+		if not enemy["boss"]:
+			enemy["marker_index"] = count
+			count += 1
+	var ring_mesh := TorusMesh.new()
+	ring_mesh.inner_radius = 0.47
+	ring_mesh.outer_radius = 0.54
+	ring_mesh.rings = 12
+	ring_mesh.ring_segments = 4
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = ring_mesh
+	multimesh.instance_count = count
+	buried_markers = MultiMeshInstance3D.new()
+	buried_markers.name = "BuriedSpiritHints"
+	buried_markers.multimesh = multimesh
+	buried_markers.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	buried_marker_material = StandardMaterial3D.new()
+	buried_marker_material.albedo_color = Color(.37, .96, .87, .53)
+	buried_marker_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	buried_marker_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	buried_marker_material.emission_enabled = true
+	buried_marker_material.emission = Color(.26, .86, .79)
+	buried_marker_material.emission_energy_multiplier = .55
+	buried_markers.material_override = buried_marker_material
+	current_map.add_child(buried_markers)
+	for enemy in enemies:
+		if not enemy["boss"]:
+			_set_buried_marker(enemy, true)
+
+
+func _set_buried_marker(enemy: Dictionary, show_marker: bool) -> void:
+	if not is_instance_valid(buried_markers):
+		return
+	var index: int = enemy.get("marker_index", -1)
+	if index < 0:
+		return
+	var position: Vector3 = current_map.to_local(enemy["ground_position"] + Vector3(0.0, .045, 0.0)) if show_marker else Vector3(0.0, -1000.0, 0.0)
+	var size: Vector3 = Vector3.ONE / current_map.scale.x
+	buried_markers.multimesh.set_instance_transform(index, Transform3D(Basis().scaled(size), position))
 
 
 func _add_villager(place: Vector3, villager_name: String, boss: bool, encounter_stage: int) -> void:
@@ -636,7 +762,7 @@ func _add_villager(place: Vector3, villager_name: String, boss: bool, encounter_
 	root.call("set_daylight_visibility", encounter_stage)
 	if not boss:
 		root.set_process(false)
-	enemies.append({"node":root,"area":target_area,"head_area":head_area,"name":villager_name,"boss":boss,"hp":maximum,"max_hp":maximum,"alive":true,"aggroed":false,"speed":movement_speed,"stage":encounter_stage,"next_attack":0.0,"attack_remaining":0.0,"attack_landed":false,"ground_position":place,"emergence":1.0 if boss else -1.0,"emerge_ring":null,"retreated":false,"retreat_delay":0.0,"retreat_phase":0})
+	enemies.append({"node":root,"area":target_area,"head_area":head_area,"name":villager_name,"boss":boss,"hp":maximum,"max_hp":maximum,"alive":true,"aggroed":false,"speed":movement_speed,"stage":encounter_stage,"next_attack":0.0,"attack_remaining":0.0,"attack_landed":false,"ground_position":place,"emergence":1.0 if boss else -1.0,"emerge_ring":null,"marker_index":-1,"despawn_time":0.0,"retreated":false,"retreat_delay":0.0,"retreat_phase":0})
 
 
 func _make_ui() -> void:
@@ -945,11 +1071,17 @@ func _finish_special_lunge(reached: bool) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if OS.has_feature("web"):
+		_update_web_lights(delta)
+	if worship_remaining > 0.0:
+		worship_remaining = maxf(worship_remaining - delta, 0.0)
+		if worship_remaining <= 0.0:
+			_finish_worship()
 	respawn_protection = maxf(respawn_protection - delta, 0.0)
 	damage_shake = maxf(damage_shake - delta * 2.6, 0.0)
 	if special_preparing and not finished and not transition_pending:
 		_update_khene_preparation(delta)
-	var controls_active = not finished and not transition_pending and not special_preparing and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	var controls_active = not finished and not transition_pending and not special_preparing and worship_remaining <= 0.0 and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	dash_cooldown = maxf(dash_cooldown - delta, 0.0)
 	special_cooldown_remaining = maxf(special_cooldown_remaining - delta, 0.0)
 	if special_active and not special_unlimited and not finished and not transition_pending:
@@ -1062,6 +1194,8 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	world_time += delta
+	if buried_marker_material != null:
+		buried_marker_material.albedo_color.a = .48 + .10 * sin(world_time * 2.3)
 	if not finished and not transition_pending:
 		for medicine in medicines:
 			if not medicine["taken"] and medicine_count < MAX_MEDICINE and player.global_position.distance_to(medicine["node"].global_position) < 1.45:
@@ -1123,6 +1257,8 @@ func _apply_camera_shake() -> void:
 
 
 func _cycle_view() -> void:
+	if worship_remaining > 0.0:
+		return
 	if first_person:
 		first_person=false
 		tps_mode=true
@@ -1185,6 +1321,10 @@ func _update_enemies(delta: float) -> void:
 		return
 	var now = float(Time.get_ticks_msec()) / 1000.0
 	var reveal_health = special_active and not player.is_on_floor()
+	var active_count := 0
+	for active_enemy in enemies:
+		if active_enemy["alive"] and not active_enemy["boss"] and active_enemy["emergence"] >= 0.0:
+			active_count += 1
 	var boss_neighbor_grid := {}
 	if stage == 4:
 		for other in enemies:
@@ -1201,7 +1341,12 @@ func _update_enemies(delta: float) -> void:
 			continue
 		var enemy_node: Node3D = enemy["node"]
 		if enemy["alive"] and enemy["emergence"] < 1.0:
+			if enemy["emergence"] < 0.0 and active_count >= MAX_ACTIVE_ENEMIES:
+				continue
+			var was_buried: bool = enemy["emergence"] < 0.0
 			_update_enemy_emergence(enemy, delta)
+			if was_buried and enemy["emergence"] >= 0.0:
+				active_count += 1
 			continue
 		enemy_node.call("set_special_health_reveal", reveal_health and enemy["alive"] and enemy["stage"] == stage)
 		if not enemy["alive"]:
@@ -1210,6 +1355,11 @@ func _update_enemies(delta: float) -> void:
 		var displacement = player.global_position - enemy_node.global_position
 		displacement.y = 0.0
 		var distance = displacement.length()
+		if not enemy["boss"]:
+			enemy["despawn_time"] = float(enemy["despawn_time"]) + delta if distance > 50.0 else 0.0
+			if enemy["despawn_time"] >= 2.5:
+				_bury_enemy(enemy)
+				continue
 		var aggro_range = BOSS_VILLAGER_AGGRO_RANGE if enemy["stage"] == 4 else VILLAGER_AGGRO_RANGE
 		var in_aggro_range = distance <= aggro_range
 		if not enemy["boss"] and in_aggro_range:
@@ -1273,6 +1423,7 @@ func _update_enemy_emergence(enemy: Dictionary, delta: float) -> void:
 		if offset.length_squared() > ENEMY_EMERGE_RANGE * ENEMY_EMERGE_RANGE:
 			return
 		enemy["emergence"] = 0.0
+		_set_buried_marker(enemy, false)
 		enemy["aggroed"] = true
 		enemy_node.visible = true
 		enemy_node.set_process(true)
@@ -1292,6 +1443,25 @@ func _update_enemy_emergence(enemy: Dictionary, delta: float) -> void:
 			enemy["emerge_ring"].queue_free()
 			enemy["emerge_ring"] = null
 		enemy_node.call("set_nearby", true)
+
+
+func _bury_enemy(enemy: Dictionary) -> void:
+	if is_instance_valid(enemy["emerge_ring"]):
+		enemy["emerge_ring"].queue_free()
+	enemy["emerge_ring"] = null
+	enemy["emergence"] = -1.0
+	enemy["despawn_time"] = 0.0
+	enemy["aggroed"] = false
+	enemy["attack_remaining"] = 0.0
+	enemy["attack_landed"] = false
+	_set_buried_marker(enemy, true)
+	var enemy_node: Node3D = enemy["node"]
+	enemy_node.call("set_walking", false)
+	enemy_node.global_position = enemy["ground_position"] - Vector3(0.0, ENEMY_EMERGE_DEPTH, 0.0)
+	enemy_node.hide()
+	enemy_node.set_process(false)
+	enemy["area"].collision_layer = 0
+	enemy["head_area"].collision_layer = 0
 
 
 func _make_emergence_ring(ground: Vector3) -> MeshInstance3D:
@@ -1319,6 +1489,11 @@ func _update_rescued_villager(enemy: Dictionary, delta: float) -> void:
 	if enemy["boss"] or enemy["retreated"]:
 		return
 	var enemy_node: Node3D = enemy["node"]
+	if player.global_position.distance_squared_to(enemy_node.global_position) > 1600.0:
+		enemy["retreated"] = true
+		enemy_node.hide()
+		enemy_node.set_process(false)
+		return
 	if enemy["retreat_delay"] > 0.0:
 		enemy["retreat_delay"] = maxf(float(enemy["retreat_delay"]) - delta, 0.0)
 		enemy_node.call("set_nearby", player.global_position.distance_squared_to(enemy_node.global_position) < 576.0)
@@ -1349,24 +1524,99 @@ func _apply_player_damage(amount: int, notice: String) -> void:
 		_handle_player_death()
 
 
-func _spawn_boss_spirit(origin: Vector3, offset: float) -> void:
+func _spawn_boss_spirit(origin: Vector3, offset: float, spread: float) -> void:
+	if boss_spirits.size() >= 9:
+		return
+	if boss_projectile_mesh == null:
+		boss_projectile_mesh = SphereMesh.new()
+		boss_projectile_mesh.radial_segments = 8
+		boss_projectile_mesh.rings = 4
+		boss_projectile_material = StandardMaterial3D.new()
+		boss_projectile_material.albedo_color = Color(.48, .91, 1.0, .82)
+		boss_projectile_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		boss_projectile_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		boss_projectile_material.emission_enabled = true
+		boss_projectile_material.emission = Color(.32, .76, 1.0)
+		boss_projectile_material.emission_energy_multiplier = .55
+		boss_projectile_eye_material = StandardMaterial3D.new()
+		boss_projectile_eye_material.albedo_color = Color(.08, .20, .35)
+		boss_projectile_eye_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var spirit = Node3D.new()
 	spirit.name = "GrandmotherSpiritAttack"
 	add_child(spirit)
 	spirit.global_position = origin + Vector3(offset, 1.65, 0.0)
-	_sphere(spirit, Vector3.ZERO, Vector3(.44, .56, .30), Color(.62, .84, .98, .50), true)
-	_sphere(spirit, Vector3(0.0, -.25, .07), Vector3(.28, .37, .22), Color(.72, .91, 1.0, .22), true)
-	_sphere(spirit, Vector3(-.15, .10, -.26), Vector3(.055, .08, .025), Color(.22, .42, .58, .75), true)
-	_sphere(spirit, Vector3(.15, .10, -.26), Vector3(.055, .08, .025), Color(.22, .42, .58, .75), true)
+	var body := MeshInstance3D.new()
+	body.mesh = boss_projectile_mesh
+	body.material_override = boss_projectile_material
+	body.scale = Vector3(.88, 1.10, .60)
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	spirit.add_child(body)
 	for side in [-1.0, 1.0]:
-		_sphere(spirit, Vector3(side * .34, -.28, .04), Vector3(.11, .34, .12), Color(.67, .87, .98, .28), true).rotation.z = side * .48
-	var glow = OmniLight3D.new()
-	glow.light_color = Color(.56, .80, 1.0)
-	glow.light_energy = 1.1
-	glow.omni_range = 3.5
-	spirit.add_child(glow)
-	var direction = ((player.global_position + Vector3(0.0, 1.0, 0.0)) - spirit.global_position).normalized()
+		var eye := MeshInstance3D.new()
+		eye.mesh = boss_projectile_mesh
+		eye.material_override = boss_projectile_eye_material
+		eye.position = Vector3(side * .15, .11, -.28)
+		eye.scale = Vector3(.11, .16, .07)
+		eye.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		spirit.add_child(eye)
+	var predicted_target: Vector3 = player.global_position + player.velocity * .35 + Vector3(0.0, 1.0, 0.0)
+	var direction: Vector3 = (predicted_target - spirit.global_position).normalized()
+	direction = Basis(Vector3.UP, spread) * direction
 	boss_spirits.append({"node": spirit, "direction": direction, "age": 0.0})
+
+
+func _begin_boss_pulse() -> void:
+	boss_pulse_center = player.global_position
+	boss_pulse_center.y = .06
+	boss_pulse_remaining = BOSS_PULSE_WARNING
+	boss_pulse_marker = MeshInstance3D.new()
+	boss_pulse_marker.name = "SpiritPulseWarning"
+	var ring := TorusMesh.new()
+	ring.inner_radius = .95
+	ring.outer_radius = 1.0
+	ring.rings = 28
+	ring.ring_segments = 4
+	boss_pulse_marker.mesh = ring
+	boss_pulse_marker.scale = Vector3.ONE * BOSS_PULSE_RADIUS
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(1.0, .42, .18, .88)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.emission_enabled = true
+	material.emission = Color(.95, .29, .10)
+	material.emission_energy_multiplier = .75
+	boss_pulse_marker.material_override = material
+	boss_pulse_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(boss_pulse_marker)
+	boss_pulse_marker.global_position = boss_pulse_center
+	_show_message("ยายจ่อยร่ายคาถา! ออกจากวงสีแดง", 1.5)
+
+
+func _clear_boss_pulse() -> void:
+	if is_instance_valid(boss_pulse_marker):
+		boss_pulse_marker.queue_free()
+	boss_pulse_marker = null
+	boss_pulse_remaining = 0.0
+	boss_pulse_cooldown = BOSS_PULSE_INTERVAL
+
+
+func _update_boss_pulse(delta: float, can_cast: bool) -> void:
+	if boss_pulse_remaining > 0.0:
+		boss_pulse_remaining = maxf(boss_pulse_remaining - delta, 0.0)
+		if is_instance_valid(boss_pulse_marker):
+			boss_pulse_marker.scale = Vector3.ONE * BOSS_PULSE_RADIUS * (1.0 + .07 * sin(world_time * 18.0))
+		if boss_pulse_remaining <= 0.0:
+			var impact: Vector3 = player.global_position - boss_pulse_center
+			impact.y = 0.0
+			_clear_boss_pulse()
+			if impact.length_squared() < BOSS_PULSE_RADIUS * BOSS_PULSE_RADIUS and dash_remaining <= 0.0 and not special_lunging and respawn_protection <= 0.0:
+				_apply_player_damage(18, "คาถาของยายจ่อยกระแทกวิกรม!")
+		return
+	if not can_cast:
+		return
+	boss_pulse_cooldown -= delta
+	if boss_pulse_cooldown <= 0.0:
+		_begin_boss_pulse()
 
 
 func _clear_boss_spirits() -> void:
@@ -1381,14 +1631,26 @@ func _update_boss_spirits(delta: float) -> void:
 	if boss_enemy_index >= 0 and boss_enemy_index < enemies.size():
 		var boss = enemies[boss_enemy_index]
 		if boss["alive"]:
-			var boss_position: Vector3 = boss["node"].global_position
+			boss_move_time += delta
+			var boss_node: Node3D = boss["node"]
+			var anchor: Vector3 = current_map.to_global(Vector3(0.0, 0.0, -96.0))
+			boss_node.global_position = anchor + Vector3(sin(boss_move_time * .72) * 4.0, .14 + sin(boss_move_time * 2.2) * .12, cos(boss_move_time * .55) * 2.3)
+			var facing := player.global_position - boss_node.global_position
+			boss_node.rotation.y = atan2(-facing.x, -facing.z)
+			boss_node.call("set_walking", true, 1.8)
+			if is_instance_valid(boss_aura):
+				boss_aura.scale = Vector3.ONE * (1.0 + .10 * sin(boss_move_time * 3.0))
+			var boss_position: Vector3 = boss_node.global_position
+			_update_boss_pulse(delta, rescued_stage >= MAP_VILLAGER_COUNTS[3] and boss_position.distance_squared_to(player.global_position) < 1225.0)
+			if finished:
+				return
 			boss_phase_remaining = maxf(boss_phase_remaining - delta, 0.0)
 			if boss_phase_remaining <= 0.0:
 				if rescued_stage < MAP_VILLAGER_COUNTS[3]:
 					boss_phase_remaining = BOSS_ATTACK_DURATION
 				elif not boss_vulnerable:
 					_open_boss_window()
-					_show_message("เกราะวิญญาณของยายจ่อยเปิด! โจมตีได้ 3 วินาที", 2.0)
+					_show_message("เกราะวิญญาณของยายจ่อยเปิด! โจมตีได้ 4 วินาที", 2.0)
 				else:
 					boss_vulnerable = false
 					boss_phase_remaining = BOSS_ATTACK_DURATION
@@ -1397,16 +1659,20 @@ func _update_boss_spirits(delta: float) -> void:
 					boss_phase_label.modulate = Color("a9dce8")
 					boss_shield.visible = true
 					_show_message("ยายจ่อยเริ่มปล่อยวิญญาณอีกครั้ง", 1.5)
-			if not boss_vulnerable:
+			if not boss_vulnerable and boss_position.distance_squared_to(player.global_position) < 2025.0:
 				boss_spirit_cooldown -= delta
 				if boss_spirit_cooldown <= 0.0:
-					_spawn_boss_spirit(boss_position, -0.85)
-					_spawn_boss_spirit(boss_position, 0.85)
+					_spawn_boss_spirit(boss_position, -0.75, -.22)
+					_spawn_boss_spirit(boss_position, 0.0, 0.0)
+					_spawn_boss_spirit(boss_position, 0.75, .22)
 					boss_spirit_cooldown = BOSS_SPIRIT_INTERVAL
 	for index in range(boss_spirits.size() - 1, -1, -1):
 		var spirit = boss_spirits[index]
 		var node: Node3D = spirit["node"]
 		spirit["age"] += delta
+		if spirit["age"] < 1.0:
+			var desired: Vector3 = (player.global_position + Vector3(0.0, 1.0, 0.0) - node.global_position).normalized()
+			spirit["direction"] = spirit["direction"].lerp(desired, delta * .45).normalized()
 		node.global_position += spirit["direction"] * BOSS_SPIRIT_SPEED * delta
 		node.position.y += sin(spirit["age"] * 9.0) * .004
 		node.rotation.y += delta * 2.8
@@ -1420,7 +1686,7 @@ func _update_boss_spirits(delta: float) -> void:
 			boss_spirits.remove_at(index)
 			if finished:
 				return
-		elif spirit["age"] > 7.0:
+		elif spirit["age"] > 4.8:
 			node.queue_free()
 			boss_spirits.remove_at(index)
 
@@ -1434,6 +1700,7 @@ func _open_boss_window() -> void:
 	boss_phase_label.modulate = Color("f8d38b")
 	boss_shield.visible = false
 	_clear_boss_spirits()
+	_clear_boss_pulse()
 
 
 func _shoot() -> void:
@@ -1526,13 +1793,15 @@ func _exorcise(enemy: Dictionary, award_charge: bool) -> void:
 	enemy["head_area"].collision_layer = 0
 	if enemy["boss"]:
 		_clear_boss_spirits()
+		_clear_boss_pulse()
 		boss_phase_label.visible = false
 		boss_shield.visible = false
+		boss_aura.visible = false
 		_show_message("ผีทะนงทวยออกจากร่างยายจ่อยแล้ว", 2.3)
 	else:
 		var shelter_entry: Vector3 = _nearest_shelter_entry(enemy["node"].global_position)
 		enemy["retreat_entry"] = current_map.to_global(shelter_entry)
-		enemy["retreat_inside"] = current_map.to_global(shelter_entry + Vector3(0.0, 0.85 if stage == 1 else 0.0, 0.9))
+		enemy["retreat_inside"] = current_map.to_global(shelter_entry + Vector3(0.0, 0.85, 0.9))
 		enemy["retreat_delay"] = 0.75
 		rescued_stage += 1
 		rescued_total += 1
@@ -1540,7 +1809,7 @@ func _exorcise(enemy: Dictionary, award_charge: bool) -> void:
 			special_unlimited = true
 			special_cooldown_remaining = 0.0
 			_open_boss_window()
-			_show_message("ช่วยชาวบ้านครบแล้ว! พลังเคียวไม่จำกัด • เกราะยายจ่อยเปิด 3 วินาที", 3.0)
+			_show_message("ช่วยชาวบ้านครบแล้ว! พลังเคียวไม่จำกัด • เกราะยายจ่อยเปิด 4 วินาที", 3.0)
 		var just_filled = special_item_found and award_charge and special_charge == SPECIAL_MAX - 1
 		if special_item_found and award_charge:
 			special_charge = mini(special_charge + 1, SPECIAL_MAX)
@@ -1660,7 +1929,7 @@ func _cancel_reload() -> void:
 
 
 func _interact() -> void:
-	if transition_pending:
+	if transition_pending or worship_remaining > 0.0:
 		return
 	for part in parts:
 		if not part["taken"] and player.global_position.distance_to(part["node"].global_position) < 2.25:
@@ -1687,14 +1956,29 @@ func _interact() -> void:
 			return
 	for index in range(shrines.size()):
 		if not shrines[index]["worshipped"] and player.global_position.distance_to(shrines[index]["place"]) < 2.7:
-			shrines[index]["worshipped"] = true
-			worshipped_count += 1
-			current_map.mark_worshipped(index)
-			game_audio.call("play_shrine")
-			_show_message("ไหว้ศาลพระภูมิแล้ว (%d/%d)" % [worshipped_count, shrines.size()], 2.0)
-			_check_stage_clear()
+			worship_shrine_index = index
+			worship_remaining = WORSHIP_DURATION
+			avatar.call("set_worshipping", true)
+			first_weapon.call("set_worshipping", true)
+			first_weapon.visible = first_person
+			_show_message("วิกรมพนมมือไหว้ศาลพระภูมิ...", WORSHIP_DURATION)
 			return
 	_use_medicine()
+
+
+func _finish_worship() -> void:
+	avatar.call("set_worshipping", false)
+	first_weapon.call("set_worshipping", false)
+	first_weapon.visible = first_person and (has_pistol or special_preparing or special_active)
+	if worship_shrine_index < 0 or worship_shrine_index >= shrines.size():
+		return
+	shrines[worship_shrine_index]["worshipped"] = true
+	worshipped_count += 1
+	current_map.mark_worshipped(worship_shrine_index)
+	game_audio.call("play_shrine")
+	_show_message("ไหว้ศาลพระภูมิแล้ว (%d/%d)" % [worshipped_count, shrines.size()], 2.0)
+	worship_shrine_index = -1
+	_check_stage_clear()
 
 
 func _use_medicine() -> void:
@@ -1767,9 +2051,11 @@ func _commit_stage_advance() -> void:
 		enemy["node"].queue_free()
 	enemies.clear()
 	_clear_boss_spirits()
+	_clear_boss_pulse()
 	boss_enemy_index = -1
 	boss_phase_label = null
 	boss_shield = null
+	boss_aura = null
 	boss_vulnerable = false
 	boss_phase_remaining = 0.0
 	special_unlimited = false
@@ -1880,6 +2166,13 @@ func _handle_player_death() -> void:
 	_end_special()
 	_cancel_reload()
 	_clear_boss_spirits()
+	_clear_boss_pulse()
+	if worship_remaining > 0.0:
+		worship_remaining = 0.0
+		worship_shrine_index = -1
+		avatar.call("set_worshipping", false)
+		first_weapon.call("set_worshipping", false)
+		first_weapon.visible = first_person and (has_pistol or special_preparing or special_active)
 	shot_requested = false
 	trigger_held = false
 	aiming = false
@@ -1900,21 +2193,15 @@ func _handle_player_death() -> void:
 		enemy["aggroed"] = false
 		enemy["node"].call("set_walking", false)
 		if not enemy["boss"]:
-			if is_instance_valid(enemy["emerge_ring"]):
-				enemy["emerge_ring"].queue_free()
-				enemy["emerge_ring"] = null
-			enemy["emergence"] = -1.0
-			enemy["node"].global_position = enemy["ground_position"] - Vector3(0.0, ENEMY_EMERGE_DEPTH, 0.0)
-			enemy["node"].hide()
-			enemy["node"].set_process(false)
-			enemy["area"].collision_layer = 0
-			enemy["head_area"].collision_layer = 0
+			_bury_enemy(enemy)
 	_show_message("กลับมาที่จุดเซฟ • เหลือโอกาส %d/%d" % [respawns_left, RESPAWNS_PER_STAGE], 3.0)
 
 
 func _finish(victory: bool) -> void:
 	_end_special()
 	_cancel_reload()
+	_clear_boss_spirits()
+	_clear_boss_pulse()
 	finished = true
 	won = victory
 	trigger_held = false

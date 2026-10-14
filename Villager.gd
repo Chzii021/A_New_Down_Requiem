@@ -266,7 +266,7 @@ func _build_npc() -> void:
 		m.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.emission_enabled=true
 		m.emission=Color("65f4df")
-		m.emission_energy_multiplier=3.5
+		m.emission_energy_multiplier=5.0
 		eye.material_override=m
 	aura=_node(self,"SpiritWisps")
 	var glow=StandardMaterial3D.new()
@@ -330,14 +330,16 @@ func set_walking(value: bool, movement_speed: float = 2.7) -> void:
 
 
 func set_daylight_visibility(encounter_stage: int) -> void:
-	daylight_spirit = encounter_stage <= 2
+	daylight_spirit = true
 	if spirit_aura_material != null:
-		spirit_aura_material.albedo_color = Color(.55, 1.0, .83, .44) if daylight_spirit else Color(.63, .82, .77, .18)
+		spirit_aura_material.albedo_color = Color(.29, 1.0, .85, .64) if encounter_stage <= 2 else Color(.56, .84, 1.0, .68)
+	for material in flash_materials:
+		material.emission = Color(.16, .87, .78) if encounter_stage <= 2 else Color(.38, .77, 1.0)
 	_update_body_emission(true)
 
 
 func _update_body_emission(force: bool = false) -> void:
-	var energy: float = (0.30 if daylight_spirit and possessed else 0.0) + hit_reaction * .65
+	var energy: float = (0.55 if possessed else 0.0) + hit_reaction * .65
 	if not force and absf(energy - last_emission_energy) < .015 and (energy > 0.0 or last_emission_energy == 0.0):
 		return
 	last_emission_energy = energy

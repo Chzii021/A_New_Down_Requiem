@@ -16,6 +16,63 @@ const MAP_LAYOUT = preload("res://MapLayout.gd")
 var random = RandomNumberGenerator.new()
 
 
+func batch_trees() -> void:
+	# The baked maps contain many copies of the same imported tree meshes.
+	# Keep their colliders, but draw each kind in one MultiMesh batch.
+	var batches := {}
+	var houses: Array[Vector3] = []
+	if map_id > 1:
+		houses = MAP_LAYOUT.house_centers(map_id)
+	for tree_root in get_children():
+		var kind := ""
+		for child in tree_root.get_children():
+			if child.name in ["SimpleTree", "StylizedTree", "BirchTree", "PineTree"]:
+				kind = child.name
+				break
+		if kind.is_empty():
+			continue
+		var by_house := false
+		for house_center in houses:
+			if Vector2(tree_root.position.x - house_center.x, tree_root.position.z - house_center.z).length() < 7.0:
+				by_house = true
+				break
+		if by_house:
+			# These imported trees predate the homes added for rescued villagers.
+			tree_root.hide()
+			for body in tree_root.find_children("*", "CollisionObject3D", true, false):
+				body.collision_layer = 0
+				body.collision_mask = 0
+			continue
+		var meshes := tree_root.find_children("*", "MeshInstance3D", true, false)
+		if meshes.size() != 1 or meshes[0].mesh == null:
+			continue
+		var source: MeshInstance3D = meshes[0]
+		if not batches.has(kind):
+			batches[kind] = {"source": source, "transforms": []}
+		batches[kind]["transforms"].append(global_transform.affine_inverse() * source.global_transform)
+		tree_root.hide()
+	for kind in batches:
+		var batch: Dictionary = batches[kind]
+		var source: MeshInstance3D = batch["source"]
+		var mesh: Mesh = source.mesh.duplicate()
+		if mesh is ArrayMesh:
+			for surface in range(mesh.get_surface_count()):
+				var material := source.get_surface_override_material(surface)
+				if material != null:
+					mesh.surface_set_material(surface, material)
+		var transforms: Array = batch["transforms"]
+		var multimesh := MultiMesh.new()
+		multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		multimesh.mesh = mesh
+		multimesh.instance_count = transforms.size()
+		for index in range(transforms.size()):
+			multimesh.set_instance_transform(index, transforms[index])
+		var node := MultiMeshInstance3D.new()
+		node.name = "Batched" + kind
+		node.multimesh = multimesh
+		add_child(node)
+
+
 func _ready() -> void:
 	if baked_scene:
 		return
