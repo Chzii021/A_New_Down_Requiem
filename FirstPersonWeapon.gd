@@ -92,8 +92,8 @@ func _update_pose(_delta: float) -> void:
 		elif sickle_equipped and side < 0.0:
 			palm = Vector3(-.40, -.66, -.38).lerp(Vector3(-.31, -.52, -.62), lunge_weight)
 		if worship_weight > .001:
-			palm = palm.lerp(Vector3(side * .041, -.23, -.63), worship_weight)
-			hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.10, side * .10, side * .15)), worship_weight)
+			palm = palm.lerp(Vector3(side * .020, -.23, -.63), worship_weight)
+			hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.10, side * .035, side * .035)), worship_weight)
 		var wrist=palm+hand_basis*Vector3(side*.032,-.045,.024)
 		var elbow=Vector3(.34,-.50,-.55) if side>0 else Vector3(-.10,-.50,-.62)
 		var shoulder=Vector3(.43,-.70,-.16) if side>0 else Vector3(-.31,-.69,-.16)

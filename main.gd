@@ -21,8 +21,8 @@ const VILLAGER_SPEED = RUN_SPEED
 const VILLAGER_AGGRO_RANGE = 30.0
 const BOSS_VILLAGER_SPEED = 5.0
 const BOSS_VILLAGER_AGGRO_RANGE = 36.0
-const BOSS_VILLAGER_SPACING = 2.3
-const BOSS_VILLAGER_SPACING_SQUARED = BOSS_VILLAGER_SPACING * BOSS_VILLAGER_SPACING
+const ENEMY_SPACING = 2.3
+const ENEMY_SPACING_SQUARED = ENEMY_SPACING * ENEMY_SPACING
 const ENEMY_EMERGE_RANGE = 24.0
 const ENEMY_EMERGE_DEPTH = 1.9
 const ENEMY_EMERGE_DURATION = 1.15
@@ -62,6 +62,7 @@ var buried_markers: MultiMeshInstance3D
 var buried_marker_material: StandardMaterial3D
 var web_lights: Array[OmniLight3D] = []
 var web_light_refresh = 0.0
+var web_light_limit = 2
 var player: CharacterBody3D
 var avatar: Node3D
 var camera: Camera3D
@@ -133,6 +134,12 @@ var boss_pulse_cooldown = BOSS_PULSE_INTERVAL
 var boss_pulse_remaining = 0.0
 var boss_pulse_center = Vector3.ZERO
 var boss_pulse_marker: MeshInstance3D
+var boss_enraged = false
+var boss_sweep_cooldown = 9.0
+var boss_sweep_remaining = 0.0
+var boss_sweep_markers: Array[MeshInstance3D] = []
+var boss_sweep_centers: Array[Vector3] = []
+var boss_impact_effects = []
 var boss_projectile_mesh: SphereMesh
 var boss_projectile_material: StandardMaterial3D
 var boss_projectile_eye_material: StandardMaterial3D
@@ -181,10 +188,13 @@ func _ready() -> void:
 	sound_settings = hud.sound_settings
 	sound_settings.connect("volume_changed", Callable(game_audio, "set_volume_level"))
 	sound_settings.connect("sensitivity_changed", Callable(game_audio, "set_look_sensitivity"))
+	sound_settings.connect("video_changed", Callable(self, "_set_video_setting"))
 	sound_settings.connect("close_requested", Callable(self, "_close_sound_settings"))
 	sound_settings.connect("start_menu_requested", Callable(self, "_return_to_start_menu"))
 	sound_settings.call("set_levels", game_audio.call("get_volume_levels"))
 	sound_settings.call("set_sensitivity", game_audio.call("get_look_sensitivity"))
+	sound_settings.call("set_video_settings", game_audio.call("get_video_settings"))
+	_apply_video_options()
 	_update_camera(0.0)
 	# Browsers may reject pointer lock during an automatic scene transition.
 	# The next click in the game will capture the mouse when the browser permits it.
@@ -197,8 +207,19 @@ func _ready() -> void:
 
 func _configure_web_rendering() -> void:
 	# Scale only the 3D world; HUD text remains at the browser's full resolution.
-	get_viewport().scaling_3d_scale = 0.65
+	get_viewport().scaling_3d_scale = 0.55
 	get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+
+
+func _set_video_setting(key: String, value: Variant) -> void:
+	game_audio.call("set_video_setting", key, value)
+	_apply_video_options()
+
+
+func _apply_video_options() -> void:
+	var options: Dictionary = game_audio.call("get_video_settings")
+	web_light_limit = [2, 4, 6][int(options["quality"])]
+	web_light_refresh = 0.0
 
 
 func _prepare_web_lights() -> void:
@@ -225,7 +246,7 @@ func _update_web_lights(delta: float) -> void:
 	ranked.sort_custom(func(a, b): return a["distance"] < b["distance"])
 	for index in range(ranked.size()):
 		var light: OmniLight3D = ranked[index]["node"]
-		var should_show: bool = index < 4 and ranked[index]["distance"] < 484.0
+		var should_show: bool = index < web_light_limit and ranked[index]["distance"] < 484.0
 		if light.visible != should_show:
 			light.visible = should_show
 
@@ -347,6 +368,7 @@ func _load_map() -> void:
 	add_child(current_map)
 	if stage == 4:
 		current_map.scale = Vector3.ONE * BOSS_MAP_SCALE
+		_make_granny_seat()
 	current_map.get_node("Scenery").call("batch_trees")
 	shrines.clear()
 	worshipped_count = 0
@@ -354,6 +376,19 @@ func _load_map() -> void:
 		shrines.append({"place": current_map.to_global(place), "worshipped": false})
 	_make_save_point()
 	_prepare_web_lights()
+
+
+func _make_granny_seat() -> void:
+	# Local map coordinates keep the seat aligned with the baked night hall.
+	var seat := Node3D.new()
+	seat.name = "GrannyHallSeat"
+	seat.position = Vector3(0.0, 0.0, -103.0)
+	current_map.add_child(seat)
+	_box(seat, Vector3(0.0, 0.93, 0.0), Vector3(2.0, .17, .68), Color("634229"))
+	_box(seat, Vector3(0.0, 1.30, -.29), Vector3(2.0, .72, .13), Color("765034"))
+	for side in [-.78, .78]:
+		_box(seat, Vector3(side, .52, -.23), Vector3(.13, 1.0, .13), Color("4b3022"))
+		_box(seat, Vector3(side, .52, .23), Vector3(.13, 1.0, .13), Color("4b3022"))
 
 
 func _make_save_point() -> void:
@@ -625,10 +660,13 @@ func _make_enemies() -> void:
 	var places = current_map.villager_places
 	if stage == 4:
 		boss_vulnerable = false
+		boss_enraged = false
 		boss_phase_remaining = BOSS_ATTACK_DURATION
 		boss_spirit_cooldown = 1.4
-		boss_pulse_cooldown = BOSS_PULSE_INTERVAL
+		boss_pulse_cooldown = 1.8
 		boss_pulse_remaining = 0.0
+		boss_sweep_cooldown = 9.0
+		boss_sweep_remaining = 0.0
 		boss_move_time = 0.0
 		boss_enemy_index = enemies.size()
 		_add_villager(current_map.to_global(Vector3(0.0, 0.0, -96.0)), "ยายจ่อย", true, stage)
@@ -1278,7 +1316,7 @@ func _update_camera(delta: float) -> void:
 
 
 func _apply_camera_shake() -> void:
-	if damage_shake > 0.0:
+	if damage_shake > 0.0 and bool(game_audio.call("get_video_settings")["camera_shake"]):
 		camera.global_position += Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * damage_shake * .075
 
 
@@ -1344,6 +1382,8 @@ func _is_enemy_hit(hit: Dictionary) -> bool:
 
 func _update_enemies(delta: float) -> void:
 	if victory_pending or transition_pending:
+		if victory_pending and boss_enemy_index >= 0 and boss_enemy_index < enemies.size():
+			_update_rescued_villager(enemies[boss_enemy_index], delta)
 		return
 	var now = float(Time.get_ticks_msec()) / 1000.0
 	var reveal_health = special_active and not player.is_on_floor()
@@ -1351,17 +1391,16 @@ func _update_enemies(delta: float) -> void:
 	for active_enemy in enemies:
 		if active_enemy["alive"] and not active_enemy["boss"] and active_enemy["emergence"] >= 0.0:
 			active_count += 1
-	var boss_neighbor_grid := {}
-	if stage == 4:
-		for other in enemies:
-			if not other["alive"] or other["boss"] or other["stage"] != 4 or other["emergence"] < 1.0:
-				continue
-			var other_node: Node3D = other["node"]
-			var other_position := other_node.global_position
-			var cell := Vector2i(floori(other_position.x / BOSS_VILLAGER_SPACING), floori(other_position.z / BOSS_VILLAGER_SPACING))
-			if not boss_neighbor_grid.has(cell):
-				boss_neighbor_grid[cell] = []
-			boss_neighbor_grid[cell].append(other_node)
+	var neighbor_grid := {}
+	for other in enemies:
+		if not other["alive"] or other["boss"] or other["stage"] != stage or other["emergence"] < 1.0:
+			continue
+		var other_node: Node3D = other["node"]
+		var other_position := other_node.global_position
+		var cell := Vector2i(floori(other_position.x / ENEMY_SPACING), floori(other_position.z / ENEMY_SPACING))
+		if not neighbor_grid.has(cell):
+			neighbor_grid[cell] = []
+		neighbor_grid[cell].append(other_node)
 	for enemy in enemies:
 		if enemy["stage"] > stage:
 			continue
@@ -1419,25 +1458,50 @@ func _update_enemies(delta: float) -> void:
 		enemy_node.call("set_walking", approaching, float(enemy["speed"]))
 		if approaching:
 			var movement_direction := displacement.normalized()
-			if enemy["stage"] == 4:
-				var separation := Vector3.ZERO
-				var position := enemy_node.global_position
-				var cell := Vector2i(floori(position.x / BOSS_VILLAGER_SPACING), floori(position.z / BOSS_VILLAGER_SPACING))
-				for cell_x in range(cell.x - 1, cell.x + 2):
-					for cell_y in range(cell.y - 1, cell.y + 2):
-						for other_node in boss_neighbor_grid.get(Vector2i(cell_x, cell_y), []):
-							if other_node == enemy_node:
-								continue
-							var offset: Vector3 = position - other_node.global_position
-							offset.y = 0.0
-							var gap_squared := offset.length_squared()
-							if gap_squared > 0.000001 and gap_squared < BOSS_VILLAGER_SPACING_SQUARED:
-								var gap := sqrt(gap_squared)
-								separation += offset / gap * (1.0 - gap / BOSS_VILLAGER_SPACING)
-				if separation.length_squared() > 0.0001:
-					movement_direction = (movement_direction + separation * 1.5).normalized()
+			var separation := Vector3.ZERO
+			var position := enemy_node.global_position
+			var cell := Vector2i(floori(position.x / ENEMY_SPACING), floori(position.z / ENEMY_SPACING))
+			for cell_x in range(cell.x - 1, cell.x + 2):
+				for cell_y in range(cell.y - 1, cell.y + 2):
+					for other_node in neighbor_grid.get(Vector2i(cell_x, cell_y), []):
+						if other_node == enemy_node:
+							continue
+						var offset: Vector3 = position - other_node.global_position
+						offset.y = 0.0
+						var gap_squared := offset.length_squared()
+						if gap_squared < ENEMY_SPACING_SQUARED:
+							var gap := sqrt(gap_squared) if gap_squared > 0.000001 else .001
+							if gap_squared <= 0.000001:
+								offset = Vector3(1.0 if enemy_node.get_instance_id() < other_node.get_instance_id() else -1.0, 0.0, 0.0)
+								gap = 1.0
+							separation += offset / gap * (1.0 - gap / ENEMY_SPACING)
+			if separation.length_squared() > 0.0001:
+				movement_direction = (movement_direction + separation * 2.6).normalized()
 			enemy_node.global_position += movement_direction * minf(float(enemy["speed"]) * delta, distance - 1.45)
 			enemy_node.rotation.y = atan2(-displacement.x, -displacement.z)
+	_resolve_enemy_overlaps()
+
+
+func _resolve_enemy_overlaps() -> void:
+	var nearby: Array[Node3D] = []
+	for enemy in enemies:
+		if enemy["stage"] == stage and enemy["alive"] and not enemy["boss"] and enemy["emergence"] >= 1.0:
+			nearby.append(enemy["node"])
+	for index in range(nearby.size()):
+		for other_index in range(index + 1, nearby.size()):
+			var first := nearby[index]
+			var second := nearby[other_index]
+			var offset := first.global_position - second.global_position
+			offset.y = 0.0
+			var distance := offset.length()
+			if distance >= 1.35:
+				continue
+			if distance < .001:
+				offset = Vector3(.001, 0.0, 0.0)
+				distance = .001
+			var correction := offset / distance * ((1.35 - distance) * .5)
+			first.global_position += correction
+			second.global_position -= correction
 
 
 func _update_enemy_emergence(enemy: Dictionary, delta: float) -> void:
@@ -1512,10 +1576,10 @@ func _make_emergence_ring(ground: Vector3) -> MeshInstance3D:
 
 
 func _update_rescued_villager(enemy: Dictionary, delta: float) -> void:
-	if enemy["boss"] or enemy["retreated"]:
+	if enemy["retreated"]:
 		return
 	var enemy_node: Node3D = enemy["node"]
-	if player.global_position.distance_squared_to(enemy_node.global_position) > 1600.0:
+	if not enemy["boss"] and player.global_position.distance_squared_to(enemy_node.global_position) > 1600.0:
 		enemy["retreated"] = true
 		enemy_node.hide()
 		enemy_node.set_process(false)
@@ -1532,13 +1596,18 @@ func _update_rescued_villager(enemy: Dictionary, delta: float) -> void:
 		else:
 			enemy["retreated"] = true
 			enemy_node.call("set_walking", false)
-			enemy_node.hide()
-			enemy_node.set_process(false)
+			if enemy["boss"]:
+				enemy_node.rotation.y = PI
+				enemy_node.call("set_sitting", true)
+			else:
+				enemy_node.hide()
+				enemy_node.set_process(false)
 		return
-	var step := minf(RESCUED_WALK_SPEED * delta, direction.length())
+	var retreat_speed := 2.0 if enemy["boss"] else RESCUED_WALK_SPEED
+	var step := minf(retreat_speed * delta, direction.length())
 	enemy_node.global_position += direction.normalized() * step
 	enemy_node.rotation.y = atan2(-direction.x, -direction.z)
-	enemy_node.call("set_walking", true, RESCUED_WALK_SPEED)
+	enemy_node.call("set_walking", true, retreat_speed)
 
 
 func _apply_player_damage(amount: int, notice: String) -> void:
@@ -1577,6 +1646,17 @@ func _spawn_boss_spirit(origin: Vector3, offset: float, spread: float) -> void:
 	body.scale = Vector3(.88, 1.10, .60)
 	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	spirit.add_child(body)
+	var halo := MeshInstance3D.new()
+	var halo_mesh := TorusMesh.new()
+	halo_mesh.inner_radius = .48
+	halo_mesh.outer_radius = .56
+	halo_mesh.rings = 12
+	halo_mesh.ring_segments = 4
+	halo.mesh = halo_mesh
+	halo.material_override = boss_projectile_material
+	halo.rotation.x = PI * .5
+	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	spirit.add_child(halo)
 	for side in [-1.0, 1.0]:
 		var eye := MeshInstance3D.new()
 		eye.mesh = boss_projectile_mesh
@@ -1615,6 +1695,12 @@ func _begin_boss_pulse() -> void:
 	boss_pulse_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(boss_pulse_marker)
 	boss_pulse_marker.global_position = boss_pulse_center
+	var inner := MeshInstance3D.new()
+	inner.mesh = ring
+	inner.material_override = material
+	inner.scale = Vector3.ONE * .56
+	inner.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	boss_pulse_marker.add_child(inner)
 	_show_message("ยายจ่อยร่ายคาถา! ออกจากวงสีแดง", 1.5)
 
 
@@ -1623,7 +1709,7 @@ func _clear_boss_pulse() -> void:
 		boss_pulse_marker.queue_free()
 	boss_pulse_marker = null
 	boss_pulse_remaining = 0.0
-	boss_pulse_cooldown = BOSS_PULSE_INTERVAL
+	boss_pulse_cooldown = 5.0 if boss_enraged else BOSS_PULSE_INTERVAL
 
 
 func _update_boss_pulse(delta: float, can_cast: bool) -> void:
@@ -1634,6 +1720,7 @@ func _update_boss_pulse(delta: float, can_cast: bool) -> void:
 		if boss_pulse_remaining <= 0.0:
 			var impact: Vector3 = player.global_position - boss_pulse_center
 			impact.y = 0.0
+			_spawn_boss_impact(boss_pulse_center, BOSS_PULSE_RADIUS, Color(1.0, .42, .14))
 			_clear_boss_pulse()
 			if impact.length_squared() < BOSS_PULSE_RADIUS * BOSS_PULSE_RADIUS and dash_remaining <= 0.0 and not special_lunging and respawn_protection <= 0.0:
 				_apply_player_damage(18, "คาถาของยายจ่อยกระแทกวิกรม!")
@@ -1645,6 +1732,112 @@ func _update_boss_pulse(delta: float, can_cast: bool) -> void:
 		_begin_boss_pulse()
 
 
+func _spawn_boss_impact(center: Vector3, radius: float, tint: Color) -> void:
+	var ring := MeshInstance3D.new()
+	ring.name = "SpiritImpactWave"
+	var shape := TorusMesh.new()
+	shape.inner_radius = .88
+	shape.outer_radius = 1.0
+	shape.rings = 22
+	shape.ring_segments = 4
+	ring.mesh = shape
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = Color(tint.r, tint.g, tint.b, .85)
+	material.emission_enabled = true
+	material.emission = tint
+	material.emission_energy_multiplier = .9
+	ring.material_override = material
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(ring)
+	ring.global_position = center + Vector3(0.0, .06, 0.0)
+	boss_impact_effects.append({"node": ring, "radius": radius, "age": 0.0})
+
+
+func _update_boss_impacts(delta: float) -> void:
+	for index in range(boss_impact_effects.size() - 1, -1, -1):
+		var effect = boss_impact_effects[index]
+		effect["age"] += delta
+		var progress: float = minf(float(effect["age"]) / .58, 1.0)
+		var ring: MeshInstance3D = effect["node"]
+		ring.scale = Vector3.ONE * lerpf(.35, float(effect["radius"]), progress)
+		var tint: Color = ring.material_override.albedo_color
+		tint.a = .85 * (1.0 - progress)
+		ring.material_override.albedo_color = tint
+		if progress >= 1.0:
+			ring.queue_free()
+			boss_impact_effects.remove_at(index)
+
+
+func _begin_boss_sweep() -> void:
+	var target := player.global_position + player.velocity * .35
+	target.y = .08
+	var lateral := player.velocity
+	lateral.y = 0.0
+	if lateral.length_squared() < .2:
+		lateral = Vector3.RIGHT
+	else:
+		lateral = Vector3(-lateral.z, 0.0, lateral.x).normalized()
+	boss_sweep_remaining = 1.55
+	for offset in [-2.8, 0.0, 2.8]:
+		var center: Vector3 = target + lateral * offset
+		boss_sweep_centers.append(center)
+		var marker := MeshInstance3D.new()
+		marker.name = "SpiritSweepWarning"
+		var ring := TorusMesh.new()
+		ring.inner_radius = .92
+		ring.outer_radius = 1.0
+		ring.rings = 20
+		ring.ring_segments = 4
+		marker.mesh = ring
+		marker.scale = Vector3.ONE * 1.4
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color(.77, .27, 1.0, .84)
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.emission_enabled = true
+		material.emission = Color(.60, .12, .95)
+		material.emission_energy_multiplier = .8
+		marker.material_override = material
+		marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(marker)
+		marker.global_position = center
+		boss_sweep_markers.append(marker)
+	_show_message("ยายจ่อยเรียกวิญญาณเป็นแนว! หลบวงสีม่วง", 1.8)
+
+
+func _clear_boss_sweep() -> void:
+	for marker in boss_sweep_markers:
+		if is_instance_valid(marker):
+			marker.queue_free()
+	boss_sweep_markers.clear()
+	boss_sweep_centers.clear()
+	boss_sweep_remaining = 0.0
+	boss_sweep_cooldown = 8.0
+
+
+func _update_boss_sweep(delta: float) -> void:
+	if boss_sweep_remaining > 0.0:
+		boss_sweep_remaining = maxf(boss_sweep_remaining - delta, 0.0)
+		for marker in boss_sweep_markers:
+			marker.scale = Vector3.ONE * (1.4 + .11 * sin(world_time * 20.0))
+		if boss_sweep_remaining <= 0.0:
+			var hit := false
+			for center in boss_sweep_centers:
+				_spawn_boss_impact(center, 2.2, Color(.75, .22, 1.0))
+				var offset: Vector3 = player.global_position - center
+				offset.y = 0.0
+				hit = hit or offset.length_squared() < 1.96
+			_clear_boss_sweep()
+			if hit and dash_remaining <= 0.0 and not special_lunging and respawn_protection <= 0.0:
+				_apply_player_damage(14, "วิญญาณของยายจ่อยพุ่งขึ้นจากดิน!")
+		return
+	boss_sweep_cooldown -= delta
+	if boss_sweep_cooldown <= 0.0:
+		_begin_boss_sweep()
+
+
 func _clear_boss_spirits() -> void:
 	for spirit in boss_spirits:
 		spirit["node"].queue_free()
@@ -1652,6 +1845,7 @@ func _clear_boss_spirits() -> void:
 
 
 func _update_boss_spirits(delta: float) -> void:
+	_update_boss_impacts(delta)
 	if finished or stage != 4 or transition_pending or victory_pending:
 		return
 	if boss_enemy_index >= 0 and boss_enemy_index < enemies.size():
@@ -1667,7 +1861,9 @@ func _update_boss_spirits(delta: float) -> void:
 			if is_instance_valid(boss_aura):
 				boss_aura.scale = Vector3.ONE * (1.0 + .10 * sin(boss_move_time * 3.0))
 			var boss_position: Vector3 = boss_node.global_position
-			_update_boss_pulse(delta, rescued_stage >= MAP_VILLAGER_COUNTS[3] and boss_position.distance_squared_to(player.global_position) < 1225.0)
+			_update_boss_pulse(delta, not boss_vulnerable)
+			if boss_enraged and not boss_vulnerable:
+				_update_boss_sweep(delta)
 			if finished:
 				return
 			boss_phase_remaining = maxf(boss_phase_remaining - delta, 0.0)
@@ -1688,10 +1884,14 @@ func _update_boss_spirits(delta: float) -> void:
 			if not boss_vulnerable and boss_position.distance_squared_to(player.global_position) < 2025.0:
 				boss_spirit_cooldown -= delta
 				if boss_spirit_cooldown <= 0.0:
+					if boss_enraged:
+						_spawn_boss_spirit(boss_position, -1.4, -.34)
 					_spawn_boss_spirit(boss_position, -0.75, -.22)
 					_spawn_boss_spirit(boss_position, 0.0, 0.0)
 					_spawn_boss_spirit(boss_position, 0.75, .22)
-					boss_spirit_cooldown = BOSS_SPIRIT_INTERVAL
+					if boss_enraged:
+						_spawn_boss_spirit(boss_position, 1.4, .34)
+					boss_spirit_cooldown = 1.75 if boss_enraged else BOSS_SPIRIT_INTERVAL
 	for index in range(boss_spirits.size() - 1, -1, -1):
 		var spirit = boss_spirits[index]
 		var node: Node3D = spirit["node"]
@@ -1727,6 +1927,7 @@ func _open_boss_window() -> void:
 	boss_shield.visible = false
 	_clear_boss_spirits()
 	_clear_boss_pulse()
+	_clear_boss_sweep()
 
 
 func _shoot() -> void:
@@ -1798,6 +1999,14 @@ func _hit_enemy(index: int, damage: int, award_charge: bool = true) -> void:
 	game_audio.call("play_hit")
 	enemy["hp"] = maxi(enemy["hp"]-damage,0)
 	enemy["node"].call("receive_hit",enemy["hp"],enemy["max_hp"])
+	if enemy["boss"] and not boss_enraged and enemy["hp"] > 0 and enemy["hp"] <= BOSS_HP / 2:
+		boss_enraged = true
+		boss_sweep_cooldown = 2.2
+		boss_spirit_cooldown = .7
+		boss_phase_label.text = "ยายจ่อยคลั่ง!"
+		boss_phase_label.modulate = Color("e9a2ff")
+		_spawn_boss_impact(enemy["node"].global_position, 5.0, Color(.75, .27, 1.0))
+		_show_message("ยายจ่อยโกรธ! ระวังวิญญาณเป็นแนวและคาถาถี่ขึ้น", 3.0)
 	if enemy["hp"] <= 0:
 		_exorcise(enemy, award_charge)
 	else:
@@ -1820,9 +2029,13 @@ func _exorcise(enemy: Dictionary, award_charge: bool) -> void:
 	if enemy["boss"]:
 		_clear_boss_spirits()
 		_clear_boss_pulse()
+		_clear_boss_sweep()
 		boss_phase_label.visible = false
 		boss_shield.visible = false
 		boss_aura.visible = false
+		enemy["retreat_entry"] = current_map.to_global(Vector3(0.0, 0.0, -100.0))
+		enemy["retreat_inside"] = current_map.to_global(Vector3(0.0, 0.0, -103.0))
+		enemy["retreat_delay"] = 1.0
 		_show_message("ผีทะนงทวยออกจากร่างยายจ่อยแล้ว", 2.3)
 	else:
 		var shelter_entry: Vector3 = _nearest_shelter_entry(enemy["node"].global_position)
@@ -1888,7 +2101,7 @@ func _check_stage_clear() -> void:
 		transition_pending = true
 		victory_pending = true
 		_show_message("ไหว้ศาลและช่วยทุกคนครบแล้ว ยายจ่อยเป็นอิสระ!", 2.6)
-		get_tree().create_timer(2.6).timeout.connect(func():
+		get_tree().create_timer(6.0).timeout.connect(func():
 			if not finished:
 				_finish(true))
 	else:
@@ -2079,6 +2292,7 @@ func _commit_stage_advance() -> void:
 	enemies.clear()
 	_clear_boss_spirits()
 	_clear_boss_pulse()
+	_clear_boss_sweep()
 	boss_enemy_index = -1
 	boss_phase_label = null
 	boss_shield = null
@@ -2196,6 +2410,7 @@ func _handle_player_death() -> void:
 	_cancel_reload()
 	_clear_boss_spirits()
 	_clear_boss_pulse()
+	_clear_boss_sweep()
 	if worship_remaining > 0.0:
 		worship_remaining = 0.0
 		worship_shrine_index = -1
@@ -2232,6 +2447,7 @@ func _finish(victory: bool) -> void:
 	_cancel_reload()
 	_clear_boss_spirits()
 	_clear_boss_pulse()
+	_clear_boss_sweep()
 	finished = true
 	won = victory
 	trigger_held = false

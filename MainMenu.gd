@@ -153,10 +153,12 @@ func _build_settings() -> void:
 	sound_settings.hide()
 	sound_settings.connect("volume_changed", Callable(game_audio, "set_volume_level"))
 	sound_settings.connect("sensitivity_changed", Callable(game_audio, "set_look_sensitivity"))
+	sound_settings.connect("video_changed", Callable(game_audio, "set_video_setting"))
 	sound_settings.connect("close_requested", Callable(self, "_close_settings"))
 	sound_settings.connect("start_menu_requested", Callable(self, "_close_settings"))
 	sound_settings.call("set_levels", game_audio.call("get_volume_levels"))
 	sound_settings.call("set_sensitivity", game_audio.call("get_look_sensitivity"))
+	sound_settings.call("set_video_settings", game_audio.call("get_video_settings"))
 
 
 func _add_image_button(parent: VBoxContainer, texture_path: String, crop: Rect2, action: Callable) -> void:

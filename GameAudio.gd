@@ -42,6 +42,11 @@ var reload_player: AudioStreamPlayer
 var item_pickup_player: AudioStreamPlayer
 var volume_levels = {"music": 1.0, "gun": 1.0, "effects": 1.0}
 var look_sensitivity = 1.0
+var graphics_quality = 0 if OS.has_feature("web") else 1
+var fps_limit = 60
+var fullscreen = false
+var vsync = true
+var camera_shake = true
 var music_base_db := MUSIC_BASE_DB
 
 
@@ -89,6 +94,7 @@ func _ready() -> void:
 		var item_pickup_stream: AudioStream = load(ITEM_PICKUP_PATH)
 		item_pickup_player = _one_shot("ItemPickupSound", item_pickup_stream, -5.0)
 	_apply_volumes()
+	apply_video_settings()
 	music_player.play()
 
 
@@ -99,6 +105,11 @@ func _load_settings() -> void:
 	for category in volume_levels.keys():
 		volume_levels[category] = clampf(float(config.get_value("audio", category, 1.0)), 0.0, 1.0)
 	look_sensitivity = clampf(float(config.get_value("controls", "look_sensitivity", 1.0)), 0.25, 2.0)
+	graphics_quality = clampi(int(config.get_value("video", "quality", graphics_quality)), 0, 2)
+	fps_limit = int(config.get_value("video", "fps_limit", 60))
+	fullscreen = bool(config.get_value("video", "fullscreen", false))
+	vsync = bool(config.get_value("video", "vsync", true))
+	camera_shake = bool(config.get_value("controls", "camera_shake", true))
 
 
 func get_volume_levels() -> Dictionary:
@@ -137,6 +148,30 @@ func get_look_sensitivity() -> float:
 	return look_sensitivity
 
 
+func get_video_settings() -> Dictionary:
+	return {"quality": graphics_quality, "fps_limit": fps_limit, "fullscreen": fullscreen, "vsync": vsync, "camera_shake": camera_shake}
+
+
+func set_video_setting(key: String, value: Variant) -> void:
+	match key:
+		"quality": graphics_quality = clampi(int(value), 0, 2)
+		"fps_limit": fps_limit = int(value)
+		"fullscreen": fullscreen = bool(value)
+		"vsync": vsync = bool(value)
+		"camera_shake": camera_shake = bool(value)
+		_: return
+	apply_video_settings()
+	_save_settings()
+
+
+func apply_video_settings() -> void:
+	get_viewport().scaling_3d_scale = [0.55, 0.72, 1.0][graphics_quality]
+	get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+	Engine.max_fps = fps_limit
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
+
+
 func set_volume_level(category: String, level: float) -> void:
 	if not volume_levels.has(category):
 		return
@@ -156,6 +191,11 @@ func _save_settings() -> void:
 	for key in volume_levels.keys():
 		config.set_value("audio", key, volume_levels[key])
 	config.set_value("controls", "look_sensitivity", look_sensitivity)
+	config.set_value("controls", "camera_shake", camera_shake)
+	config.set_value("video", "quality", graphics_quality)
+	config.set_value("video", "fps_limit", fps_limit)
+	config.set_value("video", "fullscreen", fullscreen)
+	config.set_value("video", "vsync", vsync)
 	config.save(SETTINGS_PATH)
 
 

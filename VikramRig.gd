@@ -324,15 +324,14 @@ func _build_hand(side: float) -> Node3D:
 func _build_prayer_hand(side: float) -> Node3D:
 	# The weapon grip has curled fingers. Use a separate open palm for the wai.
 	var hand = _node(self, "RightPrayerHand" if side > 0.0 else "LeftPrayerHand")
-	_ellipsoid(hand, "Palm", Vector3(0.0, 0.0, 0.0), Vector3(.036, .059, .018), "d99a64")
-	_bevel(hand, "PalmFront", Vector3(0.0, .004, -.015), Vector3(.066, .092, .010), "e2a66e")
+	_ellipsoid(hand, "Palm", Vector3(0.0, 0.0, 0.0), Vector3(.031, .057, .016), "d99a64")
+	_bevel(hand, "PalmFront", Vector3(0.0, .004, -.015), Vector3(.057, .091, .009), "e2a66e")
 	for index in range(4):
-		var finger_x = (float(index) - 1.5) * .016
-		var finger_length = [.079, .097, .093, .074][index]
-		_ellipsoid(hand, "StraightFinger", Vector3(finger_x, .048 + finger_length * .46, -.005), Vector3(.008, finger_length * .54, .010), "d99a64")
-		_ellipsoid(hand, "Fingertip", Vector3(finger_x, .049 + finger_length, -.005), Vector3(.008, .009, .010), "e2a66e")
-	var thumb = _ellipsoid(hand, "Thumb", Vector3(-side * .036, .011, -.005), Vector3(.011, .037, .013), "e2a66e")
-	thumb.rotation.z = side * .28
+		var finger_x = (float(index) - 1.5) * .011
+		var finger_length = [.086, .098, .096, .084][index]
+		_ellipsoid(hand, "StraightFinger", Vector3(finger_x, .048 + finger_length * .48, -.005), Vector3(.008, finger_length * .55, .009), "d99a64")
+	var thumb = _ellipsoid(hand, "Thumb", Vector3(-side * .028, .014, -.018), Vector3(.009, .032, .010), "e2a66e")
+	thumb.rotation.z = side * .16
 	hand.hide()
 	return hand
 
@@ -642,9 +641,9 @@ func _update_pose(delta: float) -> void:
 			if side > 0.0:
 				hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.32, -.12, -.12)), lunge_weight)
 		if worship_weight > .001:
-			var prayer_palm := chest.position + Vector3(side * .041, -.12, -.36)
+			var prayer_palm := chest.position + Vector3(side * .015, -.12, -.36)
 			palm = palm.lerp(prayer_palm, worship_weight)
-			hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.10, side * .10, side * .15)), worship_weight)
+			hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.10, side * .035, side * .035)), worship_weight)
 		var wrist=palm+hand_basis*Vector3(side*.036,-.032,.025)
 		var upper_length=.255
 		var lower_length=.245

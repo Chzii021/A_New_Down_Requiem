@@ -4,6 +4,7 @@ extends "res://VikramRig.gd"
 @export_enum("Farmer", "Vendor", "Elder", "YoungWoman", "Grandmother") var variant = 0
 var possessed = true
 var walking = false
+var sitting = false
 var walk_phase_rate = 8.8
 var hit_reaction = 0.0
 const ATTACK_DURATION = 0.62
@@ -355,7 +356,7 @@ func start_attack() -> void:
 	attack_time = ATTACK_DURATION
 
 func set_nearby(value: bool) -> void:
-	var active = value or walking or special_health_reveal or attack_time > 0.0 or hit_reaction > .01 or health_focus_time > 0.0 or hp_time > 0.0
+	var active = value or walking or sitting or special_health_reveal or attack_time > 0.0 or hit_reaction > .01 or health_focus_time > 0.0 or hp_time > 0.0
 	set_process(active)
 	if not active and health_anchor != null:
 		health_anchor.visible = false
@@ -392,6 +393,12 @@ func release_spirit() -> void:
 	if variant==4:
 		release.scale=Vector3.ONE*1.4
 
+
+func set_sitting(value: bool) -> void:
+	sitting = value
+	walking = false
+	set_process(true)
+
 func _process(delta: float) -> void:
 	age+=delta
 	phase+=delta*(walk_phase_rate if walking else 1.5)
@@ -415,7 +422,8 @@ func _process(delta: float) -> void:
 	health_trail.scale.x=maxf(health_delayed,.001)
 	health_trail.position.x=-.38*(1.0-health_delayed)
 	health_trail.visible=health_delayed>.002
-	npc_body.rotation=Vector3((-.12 if possessed else 0.0)+hit_reaction*.18,0,sin(age*1.7+variant)*(.022 if possessed else .008))
+	npc_body.rotation=Vector3((-.12 if possessed else (.10 if sitting else 0.0))+hit_reaction*.18,0,sin(age*1.7+variant)*(.022 if possessed else .008))
+	npc_body.position.y = 0.96 if sitting else 1.12
 	npc_head.rotation=Vector3(-.07 if possessed else 0.0,0,sin(age*.8+variant)*.045)
 	npc_body.position.z = 0.0
 	if attack_progress >= 0.0:
@@ -425,10 +433,10 @@ func _process(delta: float) -> void:
 		npc_head.rotation.x += lunge * .07
 	for leg in npc_legs:
 		var stride=sin(phase+PI*(1.0 if leg.side<0 else 0.0))
-		leg.node.rotation.x=lerpf(leg.node.rotation.x,stride*.34 if walking else 0.0,1.0-exp(-delta*12))
-		leg.knee.rotation.x=maxf(-stride,0)*.30 if walking else 0.0
+		leg.node.rotation.x=lerpf(leg.node.rotation.x,1.18 if sitting else (stride*.34 if walking else 0.0),1.0-exp(-delta*12))
+		leg.knee.rotation.x=-1.08 if sitting else (maxf(-stride,0)*.30 if walking else 0.0)
 	for arm in npc_arms:
-		arm.node.rotation.x=(.32 if variant==1 and arm.side<0 else .08)+sin(phase)*arm.side*(.14 if walking else .018)
+		arm.node.rotation.x=(.42 if sitting else (.32 if variant==1 and arm.side<0 else .08))+sin(phase)*arm.side*(.14 if walking else .018)
 		arm.node.rotation.z=arm.side*.07
 		if attack_progress >= 0.0:
 			if arm.side > 0.0:
