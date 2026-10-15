@@ -24,6 +24,7 @@ var lunge_weight := 0.0
 var worship_target := false
 var worship_weight := 0.0
 var weapon_visible_before_worship := false
+var weapon_restore_pending := false
 var pistol: Node3D
 var rifle: Node3D
 var pistol_magazine: Node3D
@@ -270,7 +271,7 @@ func _build_character() -> void:
 	_bevel(sash_tail,"ShortTail",Vector3(.047,-.086,-.008),Vector3(.055,.19,.012),"ac4946").rotation.z=.12
 
 	for side in [-1.0,1.0]:
-		var arm = {"side":side,"sleeve":_segment(self,"RolledSleeve","29466f",.92),"cuff":_segment(self,"Cuff","40628c",1.0),"upper":_segment(self,"UpperArm","d99a64",.91),"lower":_segment(self,"Forearm","d49660",.70),"elbow":_ellipsoid(self,"Elbow",Vector3.ZERO,Vector3(.051,.056,.051),"d99a64"),"hand":_build_hand(side)}
+		var arm = {"side":side,"sleeve":_segment(self,"RolledSleeve","29466f",.92),"cuff":_segment(self,"Cuff","40628c",1.0),"upper":_segment(self,"UpperArm","d99a64",.91),"lower":_segment(self,"Forearm","d49660",.70),"elbow":_ellipsoid(self,"Elbow",Vector3.ZERO,Vector3(.051,.056,.051),"d99a64"),"hand":_build_hand(side),"prayer_hand":_build_prayer_hand(side)}
 		arms.append(arm)
 		var foot = _build_foot(side)
 		legs.append({"side":side,"shorts":_segment(self,"ShortsLeg","30313a",1.03),"cuff":_segment(self,"ShortsHem","24262f",1.0),"thigh":_segment(self,"ExposedThigh","d99a64",.91),"shin":_segment(self,"Calf","d0925d",.68),"knee":_ellipsoid(self,"Knee",Vector3.ZERO,Vector3(.060,.066,.060),"d99a64"),"foot":foot})
@@ -317,6 +318,22 @@ func _build_hand(side: float) -> Node3D:
 			_bevel(hand,"SupportFinger",Vector3(.032,.024,finger_z),Vector3(.058,.018,.021),"d3945e")
 			_ellipsoid(hand,"SupportFingertip",Vector3(.060,.030,finger_z),Vector3(.012,.011,.013),"d99a64")
 		_bevel(hand,"SupportThumb",Vector3(-.018,.040,-.017),Vector3(.022,.025,.065),"e1a36d")
+	return hand
+
+
+func _build_prayer_hand(side: float) -> Node3D:
+	# The weapon grip has curled fingers. Use a separate open palm for the wai.
+	var hand = _node(self, "RightPrayerHand" if side > 0.0 else "LeftPrayerHand")
+	_ellipsoid(hand, "Palm", Vector3(0.0, 0.0, 0.0), Vector3(.036, .059, .018), "d99a64")
+	_bevel(hand, "PalmFront", Vector3(0.0, .004, -.015), Vector3(.066, .092, .010), "e2a66e")
+	for index in range(4):
+		var finger_x = (float(index) - 1.5) * .016
+		var finger_length = [.079, .097, .093, .074][index]
+		_ellipsoid(hand, "StraightFinger", Vector3(finger_x, .048 + finger_length * .46, -.005), Vector3(.008, finger_length * .54, .010), "d99a64")
+		_ellipsoid(hand, "Fingertip", Vector3(finger_x, .049 + finger_length, -.005), Vector3(.008, .009, .010), "e2a66e")
+	var thumb = _ellipsoid(hand, "Thumb", Vector3(-side * .036, .011, -.005), Vector3(.011, .037, .013), "e2a66e")
+	thumb.rotation.z = side * .28
+	hand.hide()
 	return hand
 
 func _build_weapons() -> void:
@@ -400,10 +417,22 @@ func set_lunge_pose(active: bool) -> void:
 func set_worshipping(active: bool) -> void:
 	if active and not worship_target:
 		weapon_visible_before_worship = gun.visible
+		weapon_restore_pending = true
 		gun.hide()
-	elif not active and worship_target:
-		gun.visible = weapon_visible_before_worship
 	worship_target = active
+	_sync_worship_weapon_visibility()
+
+
+func _sync_worship_weapon_visibility() -> void:
+	if not weapon_restore_pending:
+		return
+	if worship_target or worship_weight > .01:
+		gun.hide()
+		fresh_pistol_magazine.hide()
+		fresh_rifle_magazine.hide()
+	else:
+		gun.visible = weapon_visible_before_worship
+		weapon_restore_pending = false
 
 func set_move_direction(direction: Vector3) -> void:
 	if direction.length_squared()>.001:
@@ -510,6 +539,7 @@ func _process(delta: float) -> void:
 	age+=delta
 	lunge_weight = move_toward(lunge_weight, 1.0 if lunge_pose_target else 0.0, delta * 9.0)
 	worship_weight = move_toward(worship_weight, 1.0 if worship_target else 0.0, delta * 5.0)
+	_sync_worship_weapon_visibility()
 	smoothed_speed=lerpf(smoothed_speed,move_speed,1.0-exp(-delta*12.0))
 	var clip="Idle_Neutral"
 	if grounded and smoothed_speed>.22:
@@ -572,17 +602,19 @@ func _update_pose(delta: float) -> void:
 	gun_yaw=lerp_angle(gun_yaw,desired_yaw,1.0-exp(-delta*18.0))
 	gun.rotation=Vector3(gun_pitch+recoil*.045-reload_weight*.18,gun_yaw,-reload_weight*.18)
 	_pose_magazines()
+	_sync_worship_weapon_visibility()
 	# Keep the rigid two-hand grip within both arms' reach, including steep aim
 	# and lateral strides, instead of stretching an arm or detaching its hand.
-	for iteration in range(5):
-		for side in [-1.0,1.0]:
-			if sickle_equipped and side < 0.0:
-				continue
-			var shoulder=_bone_position("UpperArm.R" if side>0 else "UpperArm.L")+Vector3(side*.045,0,0)
-			var wrist=gun.transform*_reload_hand_grip(side)+gun.basis.orthonormalized()*Vector3(side*.036,-.032,.025)
-			var distance=wrist.distance_to(shoulder)
-			if distance>.49:
-				gun.position+=(shoulder-wrist).normalized()*(distance-.49)
+	if worship_weight < .001:
+		for iteration in range(5):
+			for side in [-1.0,1.0]:
+				if sickle_equipped and side < 0.0:
+					continue
+				var shoulder=_bone_position("UpperArm.R" if side>0 else "UpperArm.L")+Vector3(side*.045,0,0)
+				var wrist=gun.transform*_reload_hand_grip(side)+gun.basis.orthonormalized()*Vector3(side*.036,-.032,.025)
+				var distance=wrist.distance_to(shoulder)
+				if distance>.49:
+					gun.position+=(shoulder-wrist).normalized()*(distance-.49)
 	muzzle.position=Vector3(0,0,-.705) if rifle_equipped else Vector3(0,0,-.340)
 	muzzle.visible=fire_time>0.0
 	var flash_amount = clampf(fire_time/.075,0.0,1.0)
@@ -610,9 +642,9 @@ func _update_pose(delta: float) -> void:
 			if side > 0.0:
 				hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.32, -.12, -.12)), lunge_weight)
 		if worship_weight > .001:
-			var prayer_palm := chest.position + Vector3(side * .038, -.12, -.33)
+			var prayer_palm := chest.position + Vector3(side * .041, -.12, -.36)
 			palm = palm.lerp(prayer_palm, worship_weight)
-			hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.16, side * .42, side * .12)), worship_weight)
+			hand_basis = hand_basis.slerp(Basis.from_euler(Vector3(-.10, side * .10, side * .15)), worship_weight)
 		var wrist=palm+hand_basis*Vector3(side*.036,-.032,.025)
 		var upper_length=.255
 		var lower_length=.245
@@ -632,6 +664,9 @@ func _update_pose(delta: float) -> void:
 		_fit(arm.lower,elbow,wrist,.054)
 		arm.elbow.position=elbow
 		arm.hand.transform=Transform3D(hand_basis,palm)
+		arm.prayer_hand.transform=Transform3D(hand_basis,palm)
+		arm.hand.visible=worship_weight <= .01
+		arm.prayer_hand.visible=worship_weight > .01
 		hand_error=maxf(hand_error,arm.hand.position.distance_to(gun.transform*grip))
 	for leg in legs:
 		var side=leg.side

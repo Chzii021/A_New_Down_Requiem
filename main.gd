@@ -1987,6 +1987,7 @@ func _interact() -> void:
 			avatar.call("set_worshipping", true)
 			first_weapon.call("set_worshipping", true)
 			first_weapon.visible = first_person
+			game_audio.call("play_shrine_prayer")
 			_show_message("วิกรมพนมมือไหว้ศาลพระภูมิ...", WORSHIP_DURATION)
 			return
 	_use_medicine()
@@ -2198,6 +2199,7 @@ func _handle_player_death() -> void:
 	if worship_remaining > 0.0:
 		worship_remaining = 0.0
 		worship_shrine_index = -1
+		game_audio.call("stop_shrine_prayer")
 		avatar.call("set_worshipping", false)
 		first_weapon.call("set_worshipping", false)
 		first_weapon.visible = first_person and (has_pistol or special_preparing or special_active)

@@ -5,11 +5,8 @@ const GUNSHOT = preload("res://audio/gunshot_original.wav")
 const HIT = preload("res://audio/hit_original.wav")
 const SPIRIT = preload("res://audio/spirit_original.wav")
 const CRAFT = preload("res://audio/craft_original.wav")
-const SHRINE_SOUNDS = [
-	preload("res://audio/End_portal_eye_place1.ogg.mp3"),
-	preload("res://audio/End_portal_eye_place2.ogg.mp3"),
-	preload("res://audio/End_portal_eye_place3.ogg.mp3")
-]
+const SHRINE_BELL_START = preload("res://audio/shrine_bell_start.wav")
+const SHRINE_BELL_COMPLETE = preload("res://audio/shrine_bell_complete.wav")
 const PORTAL_ACTIVATION = preload("res://audio/end_portal_activation.mp3")
 const PORTAL_AMBIENCE = preload("res://audio/portal_ambience.wav")
 const PORTAL_TRAVEL = preload("res://audio/Nether Portal Travel Sound (Minecraft) - Sound Effect for editing.mp3")
@@ -33,8 +30,8 @@ var hit_players: Array[AudioStreamPlayer] = []
 var hit_index = 0
 var spirit_stream: AudioStream
 var craft_player: AudioStreamPlayer
+var shrine_prayer_player: AudioStreamPlayer
 var shrine_player: AudioStreamPlayer
-var shrine_sound_index = 0
 var portal_player: AudioStreamPlayer
 var portal_ambience_player: AudioStreamPlayer3D
 var portal_travel_player: AudioStreamPlayer
@@ -72,7 +69,8 @@ func _ready() -> void:
 		hit_players.append(player)
 	spirit_stream = _preferred_stream("spirit", SPIRIT)
 	craft_player = _one_shot("CraftSound", _preferred_stream("craft", CRAFT), -5.0)
-	shrine_player = _one_shot("ShrineSound", SHRINE_SOUNDS[0], -7.0)
+	shrine_prayer_player = _one_shot("ShrinePrayerBell", SHRINE_BELL_START, -9.0)
+	shrine_player = _one_shot("ShrineCompleteBell", SHRINE_BELL_COMPLETE, -8.0)
 	portal_player = _one_shot("PortalActivationSound", PORTAL_ACTIVATION, -7.0)
 	var ambience_stream := PORTAL_AMBIENCE.duplicate() as AudioStreamWAV
 	ambience_stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -173,7 +171,8 @@ func _apply_volumes() -> void:
 	for player in hit_players:
 		player.volume_db = _scaled_db(HIT_BASE_DB, "effects")
 	craft_player.volume_db = _scaled_db(-5.0, "effects")
-	shrine_player.volume_db = _scaled_db(-7.0, "effects")
+	shrine_prayer_player.volume_db = _scaled_db(-9.0, "effects")
+	shrine_player.volume_db = _scaled_db(-8.0, "effects")
 	portal_player.volume_db = _scaled_db(-7.0, "effects")
 	portal_ambience_player.volume_db = _scaled_db(-9.0, "effects")
 	portal_travel_player.volume_db = _scaled_db(-4.0, "effects")
@@ -231,10 +230,18 @@ func play_craft() -> void:
 	craft_player.play()
 
 
+func play_shrine_prayer() -> void:
+	shrine_prayer_player.stop()
+	shrine_prayer_player.play()
+
+
+func stop_shrine_prayer() -> void:
+	shrine_prayer_player.stop()
+
+
 func play_shrine() -> void:
+	shrine_prayer_player.stop()
 	shrine_player.stop()
-	shrine_player.stream = SHRINE_SOUNDS[shrine_sound_index]
-	shrine_sound_index = (shrine_sound_index + 1) % SHRINE_SOUNDS.size()
 	shrine_player.play()
 
 
