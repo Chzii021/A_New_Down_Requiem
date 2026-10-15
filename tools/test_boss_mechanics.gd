@@ -17,6 +17,7 @@ func _run() -> void:
 	var game = preload("res://Main.tscn").instantiate()
 	game.stage = 4
 	root.add_child(game)
+	game.set_physics_process(false)
 	await process_frame
 	_check(game.enemies.size() == 36, "Stage 4 boss and villagers should load")
 	var first = game.enemies[game.boss_enemy_index + 1]
@@ -33,8 +34,22 @@ func _run() -> void:
 	_check(is_equal_approx(root.get_viewport().scaling_3d_scale, .55), "Low graphics should lower 3D resolution")
 	game.game_audio.graphics_quality = old_quality
 	game.game_audio.apply_video_settings()
-	game._update_boss_spirits(2.0)
-	_check(is_instance_valid(game.boss_pulse_marker), "Boss should target player from stage start")
+	game.transition_pending = true
+	game._update_boss_spirits(10.0)
+	_check(is_equal_approx(game.boss_start_remaining, 5.0), "Loading transition should not consume boss grace time")
+	game.transition_pending = false
+	game.player.global_position = Vector3(0, 0, -65)
+	game._update_boss_spirits(4.99)
+	_check(not is_instance_valid(game.boss_pulse_marker) and game.boss_spirits.is_empty(), "Boss must not attack during the first five playable seconds")
+	game._update_boss_spirits(.02)
+	_check(is_instance_valid(game.boss_pulse_marker), "Boss should start telegraphing after five playable seconds")
+	_check(not game.boss_spirits.is_empty(), "All boss attack timers should release after the grace time")
+	var health_before: int = game.health
+	game._update_boss_pulse(.8, false)
+	_check(game.health == health_before, "Ground spell must warn before dealing damage")
+	game._update_boss_pulse(.5, false)
+	_check(game.health == health_before - 18, "Ground spell should damage a player who remains in the warning")
+	_check(game.get_node_or_null("SpiritGroundEruption") != null, "Ground spell should leave a visible eruption after warning ends")
 	game._clear_boss_pulse()
 	game.rescued_stage = 35
 	game.boss_vulnerable = true

@@ -131,6 +131,10 @@ func _add_option(key: String, caption: String, top: float, choices: Array) -> vo
 	option.size = Vector2(310, 37)
 	option.add_theme_font_override("font", pixel_font)
 	option.add_theme_font_size_override("font_size", 16)
+	# The popup is a separate window, so it needs the Thai fallback font too.
+	var popup := option.get_popup()
+	popup.add_theme_font_override("font", pixel_font)
+	popup.add_theme_font_size_override("font_size", 16)
 	for choice in choices:
 		option.add_item(choice)
 	panel.add_child(option)

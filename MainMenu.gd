@@ -122,7 +122,7 @@ func _build_credits() -> void:
 	content.add_child(group_credit)
 
 	var details := Label.new()
-	details.text = "ชวกร สมทรัพย์ — 673380312-5\nมหาสมุทร แมทโอ เจแดน — 673380339-5\nเสรีธรรม ประทุมรัตน์ — 673380359-9"
+	details.text = "ชวกร สมทรัพย์ — 673380312-5\nมหาสมุทร แมทโอ เจแดน — 673380339-5\nเธียรธรรม ประทุมรัตน์ — 673380359-9"
 	details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	details.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	details.autowrap_mode = TextServer.AUTOWRAP_OFF

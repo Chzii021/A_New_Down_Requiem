@@ -6,6 +6,7 @@ const MAX_MEDICINE = 5
 const VILLAGER_COUNT = 115
 const MAP_VILLAGER_COUNTS = [10, 30, 40, 35]
 const BOSS_ATTACK_DURATION = 8.0
+const BOSS_START_DELAY = 5.0
 const BOSS_VULNERABLE_DURATION = 4.0
 const BOSS_SPIRIT_INTERVAL = 2.4
 const BOSS_SPIRIT_SPEED = 12.5
@@ -53,6 +54,7 @@ const STAGE_PROGRESS = preload("res://StageProgress.gd")
 const PORTAL_WARP = preload("res://PortalWarp.gd")
 const STORY_INTRO = preload("res://StoryIntro.gd")
 const VICTORY_SCREEN = preload("res://VictoryScreen.gd")
+const BOSS_GROUND_EFFECT = preload("res://BossGroundEffect.gd")
 
 var rng = RandomNumberGenerator.new()
 var material_cache = {}
@@ -130,16 +132,16 @@ var boss_phase_label: Label3D
 var boss_shield: MeshInstance3D
 var boss_aura: MeshInstance3D
 var boss_move_time = 0.0
+var boss_start_remaining = 0.0
 var boss_pulse_cooldown = BOSS_PULSE_INTERVAL
 var boss_pulse_remaining = 0.0
 var boss_pulse_center = Vector3.ZERO
-var boss_pulse_marker: MeshInstance3D
+var boss_pulse_marker: Node3D
 var boss_enraged = false
 var boss_sweep_cooldown = 9.0
 var boss_sweep_remaining = 0.0
-var boss_sweep_markers: Array[MeshInstance3D] = []
+var boss_sweep_markers: Array[Node3D] = []
 var boss_sweep_centers: Array[Vector3] = []
-var boss_impact_effects = []
 var boss_projectile_mesh: SphereMesh
 var boss_projectile_material: StandardMaterial3D
 var boss_projectile_eye_material: StandardMaterial3D
@@ -661,9 +663,10 @@ func _make_enemies() -> void:
 	if stage == 4:
 		boss_vulnerable = false
 		boss_enraged = false
+		boss_start_remaining = BOSS_START_DELAY
 		boss_phase_remaining = BOSS_ATTACK_DURATION
-		boss_spirit_cooldown = 1.4
-		boss_pulse_cooldown = 1.8
+		boss_spirit_cooldown = 0.0
+		boss_pulse_cooldown = 0.0
 		boss_pulse_remaining = 0.0
 		boss_sweep_cooldown = 9.0
 		boss_sweep_remaining = 0.0
@@ -1671,36 +1674,23 @@ func _spawn_boss_spirit(origin: Vector3, offset: float, spread: float) -> void:
 	boss_spirits.append({"node": spirit, "direction": direction, "age": 0.0})
 
 
+func _boss_ground_position(target: Vector3) -> Vector3:
+	var ray := PhysicsRayQueryParameters3D.create(target + Vector3.UP * 2.0, target - Vector3.UP * 8.0, 1)
+	ray.collide_with_areas = false
+	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
+	var ground: Vector3 = hit["position"] if not hit.is_empty() else Vector3(target.x, 0.0, target.z)
+	return ground + Vector3.UP * .035
+
+
 func _begin_boss_pulse() -> void:
-	boss_pulse_center = player.global_position
-	boss_pulse_center.y = .06
+	boss_pulse_center = _boss_ground_position(player.global_position)
 	boss_pulse_remaining = BOSS_PULSE_WARNING
-	boss_pulse_marker = MeshInstance3D.new()
-	boss_pulse_marker.name = "SpiritPulseWarning"
-	var ring := TorusMesh.new()
-	ring.inner_radius = .95
-	ring.outer_radius = 1.0
-	ring.rings = 28
-	ring.ring_segments = 4
-	boss_pulse_marker.mesh = ring
-	boss_pulse_marker.scale = Vector3.ONE * BOSS_PULSE_RADIUS
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(1.0, .42, .18, .88)
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.emission_enabled = true
-	material.emission = Color(.95, .29, .10)
-	material.emission_energy_multiplier = .75
-	boss_pulse_marker.material_override = material
-	boss_pulse_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var warning := BOSS_GROUND_EFFECT.new()
+	warning.name = "SpiritPulseWarning"
+	warning.configure(BOSS_PULSE_RADIUS, Color(1.0, .42, .14))
+	boss_pulse_marker = warning
 	add_child(boss_pulse_marker)
 	boss_pulse_marker.global_position = boss_pulse_center
-	var inner := MeshInstance3D.new()
-	inner.mesh = ring
-	inner.material_override = material
-	inner.scale = Vector3.ONE * .56
-	inner.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	boss_pulse_marker.add_child(inner)
 	_show_message("ยายจ่อยร่ายคาถา! ออกจากวงสีแดง", 1.5)
 
 
@@ -1715,8 +1705,6 @@ func _clear_boss_pulse() -> void:
 func _update_boss_pulse(delta: float, can_cast: bool) -> void:
 	if boss_pulse_remaining > 0.0:
 		boss_pulse_remaining = maxf(boss_pulse_remaining - delta, 0.0)
-		if is_instance_valid(boss_pulse_marker):
-			boss_pulse_marker.scale = Vector3.ONE * BOSS_PULSE_RADIUS * (1.0 + .07 * sin(world_time * 18.0))
 		if boss_pulse_remaining <= 0.0:
 			var impact: Vector3 = player.global_position - boss_pulse_center
 			impact.y = 0.0
@@ -1733,46 +1721,15 @@ func _update_boss_pulse(delta: float, can_cast: bool) -> void:
 
 
 func _spawn_boss_impact(center: Vector3, radius: float, tint: Color) -> void:
-	var ring := MeshInstance3D.new()
-	ring.name = "SpiritImpactWave"
-	var shape := TorusMesh.new()
-	shape.inner_radius = .88
-	shape.outer_radius = 1.0
-	shape.rings = 22
-	shape.ring_segments = 4
-	ring.mesh = shape
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = Color(tint.r, tint.g, tint.b, .85)
-	material.emission_enabled = true
-	material.emission = tint
-	material.emission_energy_multiplier = .9
-	ring.material_override = material
-	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(ring)
-	ring.global_position = center + Vector3(0.0, .06, 0.0)
-	boss_impact_effects.append({"node": ring, "radius": radius, "age": 0.0})
-
-
-func _update_boss_impacts(delta: float) -> void:
-	for index in range(boss_impact_effects.size() - 1, -1, -1):
-		var effect = boss_impact_effects[index]
-		effect["age"] += delta
-		var progress: float = minf(float(effect["age"]) / .58, 1.0)
-		var ring: MeshInstance3D = effect["node"]
-		ring.scale = Vector3.ONE * lerpf(.35, float(effect["radius"]), progress)
-		var tint: Color = ring.material_override.albedo_color
-		tint.a = .85 * (1.0 - progress)
-		ring.material_override.albedo_color = tint
-		if progress >= 1.0:
-			ring.queue_free()
-			boss_impact_effects.remove_at(index)
+	var burst := BOSS_GROUND_EFFECT.new()
+	burst.name = "SpiritGroundEruption"
+	burst.configure(radius, tint, true)
+	add_child(burst)
+	burst.global_position = center
 
 
 func _begin_boss_sweep() -> void:
 	var target := player.global_position + player.velocity * .35
-	target.y = .08
 	var lateral := player.velocity
 	lateral.y = 0.0
 	if lateral.length_squared() < .2:
@@ -1781,26 +1738,11 @@ func _begin_boss_sweep() -> void:
 		lateral = Vector3(-lateral.z, 0.0, lateral.x).normalized()
 	boss_sweep_remaining = 1.55
 	for offset in [-2.8, 0.0, 2.8]:
-		var center: Vector3 = target + lateral * offset
+		var center := _boss_ground_position(target + lateral * offset)
 		boss_sweep_centers.append(center)
-		var marker := MeshInstance3D.new()
+		var marker := BOSS_GROUND_EFFECT.new()
 		marker.name = "SpiritSweepWarning"
-		var ring := TorusMesh.new()
-		ring.inner_radius = .92
-		ring.outer_radius = 1.0
-		ring.rings = 20
-		ring.ring_segments = 4
-		marker.mesh = ring
-		marker.scale = Vector3.ONE * 1.4
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color(.77, .27, 1.0, .84)
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		material.emission_enabled = true
-		material.emission = Color(.60, .12, .95)
-		material.emission_energy_multiplier = .8
-		marker.material_override = material
-		marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		marker.configure(1.4, Color(.75, .22, 1.0))
 		add_child(marker)
 		marker.global_position = center
 		boss_sweep_markers.append(marker)
@@ -1820,8 +1762,6 @@ func _clear_boss_sweep() -> void:
 func _update_boss_sweep(delta: float) -> void:
 	if boss_sweep_remaining > 0.0:
 		boss_sweep_remaining = maxf(boss_sweep_remaining - delta, 0.0)
-		for marker in boss_sweep_markers:
-			marker.scale = Vector3.ONE * (1.4 + .11 * sin(world_time * 20.0))
 		if boss_sweep_remaining <= 0.0:
 			var hit := false
 			for center in boss_sweep_centers:
@@ -1845,7 +1785,6 @@ func _clear_boss_spirits() -> void:
 
 
 func _update_boss_spirits(delta: float) -> void:
-	_update_boss_impacts(delta)
 	if finished or stage != 4 or transition_pending or victory_pending:
 		return
 	if boss_enemy_index >= 0 and boss_enemy_index < enemies.size():
@@ -1860,6 +1799,13 @@ func _update_boss_spirits(delta: float) -> void:
 			boss_node.call("set_walking", true, 1.8)
 			if is_instance_valid(boss_aura):
 				boss_aura.scale = Vector3.ONE * (1.0 + .10 * sin(boss_move_time * 3.0))
+			# Count playable time only; pause menus and the portal transition pause this gate.
+			if boss_start_remaining > 0.0:
+				var attack_delta := maxf(delta - boss_start_remaining, 0.0)
+				boss_start_remaining = maxf(boss_start_remaining - delta, 0.0)
+				if boss_start_remaining > 0.0:
+					return
+				delta = attack_delta
 			var boss_position: Vector3 = boss_node.global_position
 			_update_boss_pulse(delta, not boss_vulnerable)
 			if boss_enraged and not boss_vulnerable:
@@ -2411,6 +2357,8 @@ func _handle_player_death() -> void:
 	_clear_boss_spirits()
 	_clear_boss_pulse()
 	_clear_boss_sweep()
+	if stage == 4:
+		boss_start_remaining = BOSS_START_DELAY
 	if worship_remaining > 0.0:
 		worship_remaining = 0.0
 		worship_shrine_index = -1
