@@ -20,6 +20,7 @@ func _run() -> void:
 	game.set_physics_process(false)
 	await process_frame
 	_check(game.enemies.size() == 36, "Stage 4 boss and villagers should load")
+	_check(game.game_audio.boss_anticipation_active, "Stage 4 should begin with anticipation music")
 	var first = game.enemies[game.boss_enemy_index + 1]
 	var second = game.enemies[game.boss_enemy_index + 2]
 	first["emergence"] = 1.0
@@ -41,9 +42,11 @@ func _run() -> void:
 	game.player.global_position = Vector3(0, 0, -65)
 	game._update_boss_spirits(4.99)
 	_check(not is_instance_valid(game.boss_pulse_marker) and game.boss_spirits.is_empty(), "Boss must not attack during the first five playable seconds")
+	_check(not game.game_audio.boss_music_active, "Combat music must wait until the boss starts attacking")
 	game._update_boss_spirits(.02)
 	_check(is_instance_valid(game.boss_pulse_marker), "Boss should start telegraphing after five playable seconds")
 	_check(not game.boss_spirits.is_empty(), "All boss attack timers should release after the grace time")
+	_check(game.game_audio.boss_music_active, "Combat music should switch when boss attacks begin")
 	var health_before: int = game.health
 	game._update_boss_pulse(.8, false)
 	_check(game.health == health_before, "Ground spell must warn before dealing damage")

@@ -168,6 +168,7 @@ var ui_font: SystemFont
 var hud
 var game_audio: Node
 var sound_settings: Control
+var gameplay_focus
 var story_intro: CanvasLayer
 var victory_screen: CanvasLayer
 var victory_pending = false
@@ -192,18 +193,24 @@ func _ready() -> void:
 	sound_settings.connect("sensitivity_changed", Callable(game_audio, "set_look_sensitivity"))
 	sound_settings.connect("video_changed", Callable(self, "_set_video_setting"))
 	sound_settings.connect("close_requested", Callable(self, "_close_sound_settings"))
+	sound_settings.connect("resume_requested", Callable(self, "_resume_from_settings_click"))
 	sound_settings.connect("start_menu_requested", Callable(self, "_return_to_start_menu"))
 	sound_settings.call("set_levels", game_audio.call("get_volume_levels"))
 	sound_settings.call("set_sensitivity", game_audio.call("get_look_sensitivity"))
 	sound_settings.call("set_video_settings", game_audio.call("get_video_settings"))
+	gameplay_focus = preload("res://GameplayFocus.gd").new()
+	gameplay_focus.pause_requested.connect(_open_sound_settings)
+	gameplay_focus.capture_confirmed.connect(_resume_after_capture)
+	add_child(gameplay_focus)
 	_apply_video_options()
 	_update_camera(0.0)
-	# Browsers may reject pointer lock during an automatic scene transition.
-	# The next click in the game will capture the mouse when the browser permits it.
-	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if OS.has_feature("web") else Input.MOUSE_MODE_CAPTURED)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	if stage == 4:
+		game_audio.call("play_boss_anticipation_music")
 	if stage == 1:
 		_start_story_intro()
 	else:
+		gameplay_focus.activate()
 		_show_message("เข้าสู่แผนที่ %d • บันทึกจุดเกิดแล้ว • สำรวจศาลและช่วยชาวบ้าน" % stage, 7.0)
 
 
@@ -267,7 +274,7 @@ func _end_story_intro() -> void:
 	story_intro.queue_free()
 	story_intro = null
 	game_audio.call("play_game_music")
-	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	gameplay_focus.activate(true)
 	_show_message("บันทึกจุดเกิดแล้ว • เก็บชิ้นส่วนปืนกระติบ ไหว้ศาลและช่วยชาวบ้าน", 7.0)
 
 
@@ -844,6 +851,8 @@ func _ui_label(parent: Control, content: String, pos: Vector2, dimensions: Vecto
 func _input(event: InputEvent) -> void:
 	if is_instance_valid(victory_screen):
 		return
+	if gameplay_focus != null and gameplay_focus.waiting_for_capture:
+		return
 	if sound_settings != null and sound_settings.visible:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not finished:
@@ -856,7 +865,7 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not finished:
 		if event.pressed:
 			if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+				gameplay_focus.request_resume()
 			else:
 				trigger_held = true
 				shot_requested = true
@@ -908,9 +917,12 @@ func _prepare_special_test() -> void:
 
 
 func _open_sound_settings() -> void:
+	if sound_settings == null or sound_settings.visible or is_instance_valid(story_intro) or is_instance_valid(victory_screen):
+		return
 	shot_requested = false
 	trigger_held = false
 	aiming = false
+	gameplay_focus.menu_opened()
 	sound_settings.show()
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	get_tree().paused = true
@@ -918,11 +930,32 @@ func _open_sound_settings() -> void:
 
 func _close_sound_settings() -> void:
 	sound_settings.hide()
+	if finished:
+		get_tree().paused = false
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	elif OS.has_feature("web"):
+		gameplay_focus.show_resume_gate()
+	else:
+		gameplay_focus.request_resume()
+
+
+func _resume_from_settings_click() -> void:
+	if finished:
+		_close_sound_settings()
+		return
+	sound_settings.hide()
+	gameplay_focus.request_resume()
+
+
+func _resume_after_capture() -> void:
+	shot_requested = false
+	trigger_held = false
+	aiming = false
 	get_tree().paused = false
-	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if finished else Input.MOUSE_MODE_CAPTURED)
 
 
 func _return_to_start_menu() -> void:
+	gameplay_focus.deactivate()
 	get_tree().paused = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	get_tree().change_scene_to_file("res://MainMenu.tscn")
@@ -1806,6 +1839,7 @@ func _update_boss_spirits(delta: float) -> void:
 				if boss_start_remaining > 0.0:
 					return
 				delta = attack_delta
+			game_audio.call("play_boss_music")
 			var boss_position: Vector3 = boss_node.global_position
 			_update_boss_pulse(delta, not boss_vulnerable)
 			if boss_enraged and not boss_vulnerable:
@@ -2267,6 +2301,8 @@ func _commit_stage_advance() -> void:
 	_load_map()
 	_make_pickups()
 	_make_enemies()
+	if stage == 4:
+		game_audio.call("play_boss_anticipation_music")
 	STAGE_PROGRESS.unlock_stage(stage)
 
 
@@ -2391,6 +2427,7 @@ func _handle_player_death() -> void:
 
 
 func _finish(victory: bool) -> void:
+	gameplay_focus.deactivate()
 	_end_special()
 	_cancel_reload()
 	_clear_boss_spirits()

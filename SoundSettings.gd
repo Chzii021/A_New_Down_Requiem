@@ -4,6 +4,7 @@ signal volume_changed(category: String, level: float)
 signal sensitivity_changed(level: float)
 signal video_changed(key: String, value: Variant)
 signal close_requested
+signal resume_requested
 signal start_menu_requested
 
 var panel: Panel
@@ -56,16 +57,25 @@ func _ready() -> void:
 	_add_check("vsync", "V-Sync", 343)
 	_add_check("camera_shake", "กล้องสั่นเมื่อบาดเจ็บ", 398)
 	if show_game_return_hint:
-		_label("Esc  กลับไปเล่น", Vector2(30, 482), Vector2(210, 24), 13, Color("d4d4d4"))
-	var close_button := Button.new()
-	close_button.text = "MAIN MENU"
-	close_button.position = Vector2(525, 473)
-	close_button.size = Vector2(175, 38)
-	close_button.add_theme_font_override("font", pixel_font)
-	close_button.add_theme_font_size_override("font_size", 19)
-	close_button.add_theme_color_override("font_color", Color("ffffff"))
-	close_button.add_theme_color_override("font_hover_color", Color("ffffff"))
-	close_button.add_theme_color_override("font_pressed_color", Color("ffffff"))
+		_label("Esc  ปิดเมนู", Vector2(30, 482), Vector2(220, 24), 13, Color("d4d4d4"))
+		var resume_button := _footer_button("กลับไปเล่น / RESUME", Vector2(263, 473), Vector2(249, 38), 17)
+		resume_button.pressed.connect(func(): resume_requested.emit())
+	var close_button := _footer_button("MAIN MENU", Vector2(525, 473), Vector2(175, 38), 19)
+	close_button.pressed.connect(func(): start_menu_requested.emit())
+	resized.connect(_layout)
+	_layout()
+
+
+func _footer_button(caption: String, pos: Vector2, dimensions: Vector2, font_size: int) -> Button:
+	var button := Button.new()
+	button.text = caption
+	button.position = pos
+	button.size = dimensions
+	button.add_theme_font_override("font", pixel_font)
+	button.add_theme_font_size_override("font_size", font_size)
+	button.add_theme_color_override("font_color", Color("ffffff"))
+	button.add_theme_color_override("font_hover_color", Color("ffffff"))
+	button.add_theme_color_override("font_pressed_color", Color("ffffff"))
 	var normal := StyleBoxFlat.new()
 	normal.bg_color = Color("3b9a35")
 	normal.border_color = Color("151515")
@@ -75,13 +85,11 @@ func _ready() -> void:
 	hover.bg_color = Color("55b74b")
 	var pressed := normal.duplicate() as StyleBoxFlat
 	pressed.bg_color = Color("2b7228")
-	close_button.add_theme_stylebox_override("normal", normal)
-	close_button.add_theme_stylebox_override("hover", hover)
-	close_button.add_theme_stylebox_override("pressed", pressed)
-	panel.add_child(close_button)
-	close_button.pressed.connect(func(): start_menu_requested.emit())
-	resized.connect(_layout)
-	_layout()
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", pressed)
+	panel.add_child(button)
+	return button
 
 
 func _label(content: String, pos: Vector2, dimensions: Vector2, font_size: int, tint: Color, _pixel: bool = false) -> Label:

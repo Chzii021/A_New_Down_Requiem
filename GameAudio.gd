@@ -15,6 +15,9 @@ const RELOAD = preload("res://audio/reload_original.wav")
 const ITEM_PICKUP_PATH = "res://audio/minecraft_item_pickup.mp3"
 const SETTINGS_PATH = "user://audio_settings.cfg"
 const MUSIC_BASE_DB = -16.44
+const BOSS_MUSIC = preload("res://audio/music_custom.mp3")
+const BOSS_MUSIC_CUE = 120.0
+const BOSS_MUSIC_BASE_DB = -18.0
 const MENU_MUSIC_PATH = "res://audio/Resident Evil 1 OST - Save Room.mp3"
 const STORY_MUSIC = preload("res://audio/Silent Hill 2 OST - White Noiz.mp3")
 const VICTORY_MUSIC = preload("res://audio/จี่หอย - พี สะเดิด 【OFFICIAL MV】.mp3")
@@ -24,6 +27,9 @@ const SPIRIT_BASE_DB = -9.02
 
 var music_player: AudioStreamPlayer
 var gameplay_music_stream: AudioStream
+var boss_music_stream: AudioStreamMP3
+var boss_music_active := false
+var boss_anticipation_active := false
 var shot_players: Array[AudioStreamPlayer] = []
 var shot_index = 0
 var hit_players: Array[AudioStreamPlayer] = []
@@ -121,11 +127,7 @@ func play_menu_music() -> void:
 	if menu_stream == null:
 		return
 	menu_stream.loop = true
-	music_base_db = -24.0
-	music_player.stop()
-	music_player.stream = menu_stream
-	_apply_volumes()
-	music_player.play()
+	_switch_music(menu_stream, -24.0)
 
 
 func play_story_music() -> void:
@@ -136,12 +138,33 @@ func play_game_music() -> void:
 	_switch_music(gameplay_music_stream, MUSIC_BASE_DB)
 
 
-func _switch_music(stream: AudioStream, base_db: float) -> void:
+func play_boss_anticipation_music() -> void:
+	if boss_anticipation_active and music_player.playing:
+		return
+	_switch_music(AMBIENT, -22.0)
+	boss_anticipation_active = true
+
+
+func play_boss_music() -> void:
+	if boss_music_active:
+		return
+	if boss_music_stream == null:
+		boss_music_stream = BOSS_MUSIC.duplicate() as AudioStreamMP3
+		boss_music_stream.loop = true
+		# Enter at the stronger rhythm and return here when the track loops.
+		boss_music_stream.loop_offset = BOSS_MUSIC_CUE
+	_switch_music(boss_music_stream, BOSS_MUSIC_BASE_DB, BOSS_MUSIC_CUE)
+	boss_music_active = true
+
+
+func _switch_music(stream: AudioStream, base_db: float, start_position: float = 0.0) -> void:
+	boss_music_active = false
+	boss_anticipation_active = false
 	music_player.stop()
 	music_player.stream = stream
 	music_base_db = base_db
 	_apply_volumes()
-	music_player.play()
+	music_player.play(start_position)
 
 
 func get_look_sensitivity() -> float:
@@ -246,7 +269,7 @@ func _preferred_stream(label: String, fallback: AudioStream) -> AudioStream:
 
 func _repeat_music() -> void:
 	if is_instance_valid(music_player):
-		music_player.play()
+		music_player.play(BOSS_MUSIC_CUE if boss_music_active else 0.0)
 
 
 func play_shot() -> void:
